@@ -7,12 +7,10 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 4** — Timeline clip editor. Canvas-based timeline strip with
-ffmpeg-generated thumbnails, draggable in/out handles, looping preview
-between them, keyboard nudges (← / →, Shift = 1 s; I / O snap to
-playhead; space toggles preview). Editor opens inline beneath the
-player from any event, search hit, or clip in the list. Saves call the
-existing `POST /api/clips` with an optional frame-accurate re-encode.
+**Phase 5** — Polish & share. Adds shared-token auth (header or
+query param), a sign-in screen on the frontend, a disk-usage chip in
+the header, and a deployment guide for getting non-technical
+teammates onto the tool over LAN or Tailscale.
 
 ## Requirements
 
@@ -78,6 +76,47 @@ uv run clip search scripts/_long_test_clip.mp4 "fractal" --fanout
 # Cut the fractal section
 uv run clip cut scripts/_long_test_clip.mp4 120 180 -o /tmp/fractal.mp4
 ```
+
+## Sharing with your team
+
+### Local: bind to the LAN
+
+```bash
+# Choose a long random token (this is the password your teammates will paste once)
+export CLIPPER_TOKEN=$(openssl rand -hex 24)
+
+# Bind to all interfaces so the LAN can reach it
+uv run clip serve --host 0.0.0.0 --port 8000
+```
+
+Find the host's LAN IP (`ip -4 addr` on Linux, `ipconfig` on Windows),
+hand teammates `http://<that-ip>:8000` and the token. The frontend
+shows a sign-in screen on first visit and remembers the token in
+`localStorage` thereafter.
+
+To rotate the token, change `CLIPPER_TOKEN`, restart the server, and
+re-share. Teammates will be prompted to re-enter.
+
+### Off-LAN: Tailscale or Cloudflare Tunnel
+
+`clip serve` is just a uvicorn process — anything that gives you a
+URL to a port works. The two easy options:
+
+- **Tailscale** — install on the host and on each teammate's device,
+  share via the tailnet. URL becomes `http://<host-tailnet-name>:8000`.
+  No port forwarding; encrypted by default.
+- **Cloudflare Tunnel** — `cloudflared tunnel --url http://localhost:8000`
+  hands you a `https://*.trycloudflare.com` URL. Public, so keep
+  `CLIPPER_TOKEN` set.
+
+### WSL2 caveat
+
+WSL2 by default exposes ports only on `localhost`. To make the
+server reachable from other devices on your LAN, run
+`netsh interface portproxy add v4tov4 listenport=8000 connectport=8000 connectaddress=$(wsl hostname -I)`
+from a Windows admin shell. Or run inside WSL2 with `--host 0.0.0.0`
+and use the Windows host's IP — Windows forwards to WSL2 transparently
+for the loopback adapter only.
 
 ## Web UI
 

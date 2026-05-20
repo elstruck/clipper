@@ -1,5 +1,53 @@
 // Typed fetch wrappers for the clipper FastAPI backend.
 
+// ---------- auth token (shared header for fetch, query param for embedded URLs) ----------
+
+const TOKEN_KEY = 'clipper.token'
+
+export function getToken(): string {
+  return localStorage.getItem(TOKEN_KEY) ?? ''
+}
+
+export function setToken(t: string) {
+  if (t) localStorage.setItem(TOKEN_KEY, t)
+  else localStorage.removeItem(TOKEN_KEY)
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+function withTokenHeader(init?: RequestInit): RequestInit {
+  const token = getToken()
+  if (!token) return init ?? {}
+  const headers = new Headers(init?.headers)
+  headers.set('X-API-Token', token)
+  return { ...(init ?? {}), headers }
+}
+
+function authedFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, withTokenHeader(init))
+}
+
+/** Append `?token=` to a URL meant for browser-embedded use (`<video src>`, `<a download>`). */
+export function mediaUrl(path: string): string {
+  const token = getToken()
+  if (!token) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}token=${encodeURIComponent(token)}`
+}
+
+export interface HealthInfo { status: string; auth_required: boolean }
+export interface Stats {
+  uploads_bytes: number
+  clips_bytes: number
+  thumbs_bytes: number
+  total_bytes: number
+  videos_count: number
+  clips_count: number
+  auth_enabled: boolean
+}
+
 export type VideoStatus = 'uploaded' | 'indexing' | 'indexed' | 'failed'
 
 export interface Video {
@@ -85,9 +133,13 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  listVideos: () => fetch('/api/videos').then(json<Video[]>),
+  health: () => fetch('/health').then(json<HealthInfo>),
 
-  getVideo: (id: string) => fetch(`/api/videos/${id}`).then(json<Video>),
+  stats: () => authedFetch('/api/stats').then(json<Stats>),
+
+  listVideos: () => authedFetch('/api/videos').then(json<Video[]>),
+
+  getVideo: (id: string) => authedFetch(`/api/videos/${id}`).then(json<Video>),
 
   uploadVideo: (file: File, onProgress?: (frac: number) => void) =>
     new Promise<Video>((resolve, reject) => {
@@ -95,6 +147,8 @@ export const api = {
       form.append('file', file)
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/videos')
+      const token = getToken()
+      if (token) xhr.setRequestHeader('X-API-Token', token)
       if (onProgress) {
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress(e.loaded / e.total)
@@ -109,31 +163,31 @@ export const api = {
     }),
 
   deleteVideo: (id: string) =>
-    fetch(`/api/videos/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
+    authedFetch(`/api/videos/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
 
   startIndex: (id: string) =>
-    fetch(`/api/videos/${id}/index`, { method: 'POST' }).then(
+    authedFetch(`/api/videos/${id}/index`, { method: 'POST' }).then(
       json<{ job_id: string; video_id: string; status: string }>,
     ),
 
-  getEvents: (id: string) => fetch(`/api/videos/${id}/events`).then(json<VideoIndex>),
+  getEvents: (id: string) => authedFetch(`/api/videos/${id}/events`).then(json<VideoIndex>),
 
   search: (id: string, query: string, fanout: boolean) =>
-    fetch(`/api/videos/${id}/search`, {
+    authedFetch(`/api/videos/${id}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, fanout, limit: 20 }),
     }).then(json<SearchResponse>),
 
-  getJob: (id: string) => fetch(`/api/jobs/${id}`).then(json<Job>),
+  getJob: (id: string) => authedFetch(`/api/jobs/${id}`).then(json<Job>),
 
   listJobs: (video_id?: string) => {
     const q = video_id ? `?video_id=${video_id}` : ''
-    return fetch(`/api/jobs${q}`).then(json<Job[]>)
+    return authedFetch(`/api/jobs${q}`).then(json<Job[]>)
   },
 
   createClip: (video_id: string, start: number, end: number, name?: string, reencode = false) =>
-    fetch('/api/clips', {
+    authedFetch('/api/clips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ video_id, start, end, name, reencode }),
@@ -141,11 +195,11 @@ export const api = {
 
   listClips: (video_id?: string) => {
     const q = video_id ? `?video_id=${video_id}` : ''
-    return fetch(`/api/clips${q}`).then(json<Clip[]>)
+    return authedFetch(`/api/clips${q}`).then(json<Clip[]>)
   },
 
   deleteClip: (id: string) =>
-    fetch(`/api/clips/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
+    authedFetch(`/api/clips/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
 }
 
 export function fmtTime(seconds: number): string {

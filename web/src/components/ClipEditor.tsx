@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fmtTime } from '../api'
+import { fmtTime, mediaUrl } from '../api'
 
 interface ThumbnailMeta {
   url: string
@@ -44,7 +44,8 @@ export default function ClipEditor(props: Props) {
   useEffect(() => {
     let cancelled = false
     setMeta(null); setSprite(null); setError(null)
-    fetch(`/api/videos/${videoId}/thumbnails`)
+    const token = localStorage.getItem('clipper.token') ?? ''
+    fetch(`/api/videos/${videoId}/thumbnails`, token ? { headers: { 'X-API-Token': token } } : undefined)
       .then(async (r) => {
         if (!r.ok) throw new Error(`thumbnails: ${r.status} ${await r.text()}`)
         return r.json() as Promise<ThumbnailMeta>
@@ -53,7 +54,7 @@ export default function ClipEditor(props: Props) {
         if (cancelled) return
         setMeta(m)
         const img = new Image()
-        img.src = m.url
+        img.src = mediaUrl(m.url)
         img.onload = () => { if (!cancelled) setSprite(img) }
         img.onerror = () => { if (!cancelled) setError('failed to load thumbnail sprite') }
       })

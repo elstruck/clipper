@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  api, fmtTime, type Clip, type Job, type SearchHit, type Video, type VideoIndex,
+  api, fmtTime, mediaUrl, type Clip, type Job, type SearchHit, type Video, type VideoIndex,
 } from '../api'
 import ClipEditor from '../components/ClipEditor'
 
@@ -95,7 +95,7 @@ export default function VideoRoute() {
     <div className="video-layout">
       <div className="col">
         <div className="player-wrap">
-          <video ref={videoRef} src={`/media/videos/${id}`} controls preload="metadata" />
+          <video ref={videoRef} src={mediaUrl(`/media/videos/${id}`)} controls preload="metadata" />
         </div>
         <div className="row">
           <div className="col" style={{ gap: 4 }}>
@@ -326,7 +326,7 @@ function ClipsPanel({
                 </span>
                 <div className="spacer" />
                 <button className="small" onClick={() => onEdit(c)}>edit</button>
-                <a href={`/media/clips/${c.id}`} download className="small">↓</a>
+                <a href={mediaUrl(`/media/clips/${c.id}`)} download className="small">↓</a>
                 <button className="danger small" onClick={() => onDelete(c.id)}>×</button>
               </div>
               {c.name && <div className="desc">{c.name}</div>}

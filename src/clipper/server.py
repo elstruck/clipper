@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from clipper import clipper as clipper_mod
 from clipper import db, jobs, pipeline, thumbnails
 from clipper import search as search_mod
+from clipper.auth import TokenAuthMiddleware, _configured_tokens
 from clipper.storage import CLIPS_DIR, UPLOADS_DIR, clip_path, ensure_dirs, upload_path
 
 log = logging.getLogger("clipper.server")
@@ -45,7 +46,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Marlin Clipper", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Marlin Clipper", version="0.5.0", lifespan=lifespan)
+app.add_middleware(TokenAuthMiddleware)
 
 
 # ---------------- models ----------------
@@ -121,7 +123,31 @@ def _byte_range_response(path: Path, range_header: Optional[str]) -> Response:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "auth_required": bool(_configured_tokens())}
+
+
+@app.get("/api/stats")
+def stats() -> dict:
+    """Aggregate disk usage + counts for the library header."""
+    def _dir_size(p: Path) -> int:
+        if not p.exists():
+            return 0
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+
+    uploads = _dir_size(UPLOADS_DIR)
+    clips = _dir_size(CLIPS_DIR)
+    thumbs = _dir_size(thumbnails.THUMBS_DIR)
+    videos_count = len(db.list_videos())
+    clips_count = len(db.list_clips())
+    return {
+        "uploads_bytes": uploads,
+        "clips_bytes": clips,
+        "thumbs_bytes": thumbs,
+        "total_bytes": uploads + clips + thumbs,
+        "videos_count": videos_count,
+        "clips_count": clips_count,
+        "auth_enabled": bool(_configured_tokens()),
+    }
 
 
 # ----- videos -----
