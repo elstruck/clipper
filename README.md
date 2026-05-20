@@ -7,11 +7,12 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 3** — Web UI MVP. React + Vite frontend served by FastAPI on a
-single port. Library page for uploads and indexing; video page with
-player, scrollable events list (synced to the playhead), search panel
-(text + find modes), and a clip list with download links. No
-frame-accurate timeline editor yet — that's Phase 4.
+**Phase 4** — Timeline clip editor. Canvas-based timeline strip with
+ffmpeg-generated thumbnails, draggable in/out handles, looping preview
+between them, keyboard nudges (← / →, Shift = 1 s; I / O snap to
+playhead; space toggles preview). Editor opens inline beneath the
+player from any event, search hit, or clip in the list. Saves call the
+existing `POST /api/clips` with an optional frame-accurate re-encode.
 
 ## Requirements
 
@@ -125,6 +126,8 @@ Interactive docs are auto-generated at `/docs` (Swagger) and `/redoc`. Key route
 | `GET`  | `/api/jobs` | List recent jobs |
 | `POST` | `/api/clips` | Cut a clip from `{video_id, start, end}` |
 | `GET`  | `/api/clips` | List clips |
+| `GET`  | `/api/videos/{id}/thumbnails` | Lazily generate + return sprite metadata |
+| `GET`  | `/media/thumbnails/{id}` | Horizontal JPEG sprite (cached, 12800×90 max) |
 | `GET`  | `/media/videos/{id}` | Stream source with HTTP Range support |
 | `GET`  | `/media/clips/{id}` | Stream rendered clip |
 
@@ -152,6 +155,7 @@ src/clipper/
 ├── storage.py     # filesystem layout (data root, uploads/, clips/, db)
 ├── db.py          # sqlite schema + DAO
 ├── jobs.py        # single-worker thread + progress tracking
+├── thumbnails.py  # ffmpeg sprite generation + caching for the timeline editor
 ├── server.py      # FastAPI app (+ static mount for web/dist)
 └── __main__.py    # typer CLI (`clip` script)
 
@@ -161,9 +165,11 @@ web/
 │   ├── App.tsx           # root layout w/ react-router outlet
 │   ├── main.tsx          # Vite entry, router config
 │   ├── index.css         # dark theme tokens + components
+│   ├── components/
+│   │   └── ClipEditor.tsx  # canvas timeline + handles + looping preview
 │   └── routes/
 │       ├── Library.tsx   # uploads + grid of videos w/ status polling
-│       └── Video.tsx     # player + events list + search + clip list
+│       └── Video.tsx     # player + events list + search + clips + editor
 ├── vite.config.ts        # dev proxy of /api + /media to FastAPI
 └── dist/                 # built bundle (served by FastAPI at /)
 ```

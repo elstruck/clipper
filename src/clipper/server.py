@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from clipper import clipper as clipper_mod
-from clipper import db, jobs, pipeline
+from clipper import db, jobs, pipeline, thumbnails
 from clipper import search as search_mod
 from clipper.storage import CLIPS_DIR, UPLOADS_DIR, clip_path, ensure_dirs, upload_path
 
@@ -164,6 +164,7 @@ def delete_video(video_id: str) -> dict:
     db.delete_video(video_id)
     src.unlink(missing_ok=True)
     sidecar.unlink(missing_ok=True)
+    thumbnails.sprite_path(video_id).unlink(missing_ok=True)
     return {"deleted": video_id}
 
 
@@ -285,6 +286,31 @@ def stream_video(video_id: str, request: Request) -> Response:
     if not path.exists():
         raise HTTPException(404, "source file missing on disk")
     return _byte_range_response(path, request.headers.get("range"))
+
+
+@app.get("/api/videos/{video_id}/thumbnails")
+def get_thumbnails(video_id: str) -> dict:
+    """Lazily generate the thumbnail sprite and return its metadata + URL."""
+    v = _video_or_404(video_id)
+    spec = thumbnails.generate_sprite(video_id, v["path"], v.get("duration"))
+    return {
+        "url": f"/media/thumbnails/{video_id}",
+        "count": spec.count,
+        "interval": spec.interval,
+        "width": spec.width,
+        "height": spec.height,
+        "thumb_width": thumbnails.THUMB_W,
+        "thumb_height": thumbnails.THUMB_H,
+    }
+
+
+@app.get("/media/thumbnails/{video_id}")
+def serve_thumbnails(video_id: str) -> Response:
+    path = thumbnails.sprite_path(video_id)
+    if not path.exists():
+        raise HTTPException(404, "thumbnails not generated — POST /api/videos/{id}/thumbnails first")
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/media/clips/{clip_id}")

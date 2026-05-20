@@ -3,8 +3,10 @@ import { useParams } from 'react-router-dom'
 import {
   api, fmtTime, type Clip, type Job, type SearchHit, type Video, type VideoIndex,
 } from '../api'
+import ClipEditor from '../components/ClipEditor'
 
 type Mode = 'text' | 'fanout'
+type EditorState = { start: number; end: number } | null
 
 export default function VideoRoute() {
   const { id = '' } = useParams<{ id: string }>()
@@ -13,6 +15,7 @@ export default function VideoRoute() {
   const [clips, setClips] = useState<Clip[]>([])
   const [job, setJob] = useState<Job | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editor, setEditor] = useState<EditorState>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const refreshVideo = useCallback(async () => {
@@ -31,7 +34,6 @@ export default function VideoRoute() {
     refreshVideo, refreshIndex, refreshClips,
   ])
 
-  // Track the latest index job for this video while indexing is in progress.
   useEffect(() => {
     if (video?.status !== 'indexing') { setJob(null); return }
     let cancelled = false
@@ -73,14 +75,17 @@ export default function VideoRoute() {
     }
   }, [])
 
-  const createClipFromHere = async (start: number, end: number) => {
-    const dur = end - start
-    const name = prompt(`Name this clip (${fmtTime(start)} → ${fmtTime(end)}, ${dur.toFixed(1)}s):`, '')
-    if (name === null) return
-    try {
-      await api.createClip(id, start, end, name || undefined)
-      void refreshClips()
-    } catch (e) { alert(`clip failed: ${e}`) }
+  const openEditor = useCallback((start: number, end: number) => {
+    setEditor({ start, end })
+    // Scroll editor into view after it renders.
+    setTimeout(() => {
+      document.getElementById('clip-editor')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 50)
+  }, [])
+
+  const saveClip = async (start: number, end: number, name?: string, reencode = false) => {
+    await api.createClip(id, start, end, name, reencode)
+    await refreshClips()
   }
 
   if (error) return <div className="card" style={{ color: 'var(--red)' }}>{error}</div>
@@ -102,6 +107,15 @@ export default function VideoRoute() {
           <div className="spacer" />
           {video.status === 'uploaded' && <button className="primary" onClick={startIndex}>start indexing</button>}
           {video.status === 'failed' && <button onClick={startIndex}>retry indexing</button>}
+          <button onClick={() => {
+            const v = videoRef.current
+            if (!v) return
+            const t = v.currentTime
+            const dur = video.duration ?? t + 5
+            openEditor(Math.max(0, t - 2), Math.min(dur, t + 5))
+          }}>
+            + new clip
+          </button>
         </div>
         {job && job.status === 'running' && (
           <div className="card col" style={{ gap: 6 }}>
@@ -119,20 +133,37 @@ export default function VideoRoute() {
             </div>
           </div>
         )}
-        {index && <EventsTimeline index={index} onJump={seekAndPlay} player={videoRef} />}
+
+        {editor && video.duration && (
+          <div id="clip-editor">
+            <ClipEditor
+              videoId={id}
+              duration={video.duration}
+              initialStart={editor.start}
+              initialEnd={editor.end}
+              videoEl={videoRef}
+              onSave={saveClip}
+              onClose={() => setEditor(null)}
+            />
+          </div>
+        )}
+
+        {index && (
+          <EventsTimeline
+            index={index}
+            onJump={seekAndPlay}
+            onEdit={openEditor}
+            player={videoRef}
+          />
+        )}
       </div>
 
       <div className="col">
-        <SearchPanel videoId={id} indexReady={!!index} onJump={seekAndPlay} />
+        <SearchPanel videoId={id} indexReady={!!index} onJump={seekAndPlay} onEdit={openEditor} />
         <ClipsPanel
           clips={clips}
           onJump={(c) => seekAndPlay(c.start, c.end)}
-          onCreateFromPlayhead={() => {
-            const v = videoRef.current
-            if (!v) return
-            const t = v.currentTime
-            void createClipFromHere(Math.max(0, t - 5), Math.min(video.duration ?? t + 5, t + 10))
-          }}
+          onEdit={(c) => openEditor(c.start, c.end)}
           onDelete={async (clipId) => {
             if (!confirm('Delete this clip?')) return
             try { await api.deleteClip(clipId); void refreshClips() }
@@ -145,10 +176,11 @@ export default function VideoRoute() {
 }
 
 function EventsTimeline({
-  index, onJump, player,
+  index, onJump, onEdit, player,
 }: {
   index: VideoIndex
   onJump: (s: number, e?: number) => void
+  onEdit: (s: number, e: number) => void
   player: React.RefObject<HTMLVideoElement | null>
 }) {
   const [t, setT] = useState(0)
@@ -170,8 +202,19 @@ function EventsTimeline({
         {index.events.map((ev, i) => {
           const active = t >= ev.start && t < ev.end
           return (
-            <li key={i} className={active ? 'active' : ''} onClick={() => onJump(ev.start, ev.end)}>
-              <span className="ts">{fmtTime(ev.start)} → {fmtTime(ev.end)}</span>
+            <li key={i} className={active ? 'active' : ''}>
+              <div className="row" style={{ gap: 6 }}>
+                <span className="ts" onClick={() => onJump(ev.start, ev.end)} style={{ cursor: 'pointer' }}>
+                  {fmtTime(ev.start)} → {fmtTime(ev.end)}
+                </span>
+                <div className="spacer" />
+                <button
+                  className="small"
+                  onClick={(e) => { e.stopPropagation(); onEdit(ev.start, ev.end) }}
+                >
+                  edit clip
+                </button>
+              </div>
               <span className="desc">{ev.description}</span>
             </li>
           )
@@ -182,8 +225,13 @@ function EventsTimeline({
 }
 
 function SearchPanel({
-  videoId, indexReady, onJump,
-}: { videoId: string; indexReady: boolean; onJump: (s: number, e?: number) => void }) {
+  videoId, indexReady, onJump, onEdit,
+}: {
+  videoId: string
+  indexReady: boolean
+  onJump: (s: number, e?: number) => void
+  onEdit: (s: number, e: number) => void
+}) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('text')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
@@ -234,8 +282,14 @@ function SearchPanel({
       {hits && (
         <ul className="event-list">
           {hits.length === 0 ? <li className="muted">no matches</li> : hits.map((h, i) => (
-            <li key={i} onClick={() => onJump(h.start, h.end)}>
-              <span className="ts">{fmtTime(h.start)} → {fmtTime(h.end)}</span>
+            <li key={i}>
+              <div className="row" style={{ gap: 6 }}>
+                <span className="ts" onClick={() => onJump(h.start, h.end)} style={{ cursor: 'pointer' }}>
+                  {fmtTime(h.start)} → {fmtTime(h.end)}
+                </span>
+                <div className="spacer" />
+                <button className="small" onClick={() => onEdit(h.start, h.end)}>edit clip</button>
+              </div>
               <span className="desc">{h.description}</span>
               <span className="meta">chunk {h.chunk_index} · score {h.score.toFixed(1)}</span>
             </li>
@@ -247,11 +301,11 @@ function SearchPanel({
 }
 
 function ClipsPanel({
-  clips, onJump, onCreateFromPlayhead, onDelete,
+  clips, onJump, onEdit, onDelete,
 }: {
   clips: Clip[]
   onJump: (c: Clip) => void
-  onCreateFromPlayhead: () => void
+  onEdit: (c: Clip) => void
   onDelete: (id: string) => void
 }) {
   return (
@@ -259,11 +313,9 @@ function ClipsPanel({
       <div className="row">
         <b>clips</b>
         <span className="small muted">{clips.length}</span>
-        <div className="spacer" />
-        <button onClick={onCreateFromPlayhead}>+ clip ±5s here</button>
       </div>
       {clips.length === 0 ? (
-        <div className="small muted">create a clip from a found moment or the current playhead</div>
+        <div className="small muted">no clips yet — open one of the events or hits with “edit clip”</div>
       ) : (
         <ul className="clip-list">
           {clips.map((c) => (
@@ -273,7 +325,8 @@ function ClipsPanel({
                   {fmtTime(c.start)} → {fmtTime(c.end)}
                 </span>
                 <div className="spacer" />
-                <a href={`/media/clips/${c.id}`} download className="small">↓ download</a>
+                <button className="small" onClick={() => onEdit(c)}>edit</button>
+                <a href={`/media/clips/${c.id}`} download className="small">↓</a>
                 <button className="danger small" onClick={() => onDelete(c.id)}>×</button>
               </div>
               {c.name && <div className="desc">{c.name}</div>}
