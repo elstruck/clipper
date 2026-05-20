@@ -122,6 +122,23 @@ def cut(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", help="Bind address (use 127.0.0.1 to keep local)"),
+    port: int = typer.Option(8000, help="Port"),
+    reload: bool = typer.Option(False, "--reload", help="Auto-reload on code change (dev only)"),
+) -> None:
+    """Start the FastAPI server."""
+    import uvicorn
+
+    console.print(f"[bold]starting clipper server[/] on http://{host}:{port}")
+    uvicorn.run(
+        "clipper.server:app",
+        host=host, port=port, reload=reload,
+        log_level="info",
+    )
+
+
+@app.command()
 def show(
     video: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True),
     events_limit: int = typer.Option(20, help="Show at most N events"),

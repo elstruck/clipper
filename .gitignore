@@ -16,6 +16,7 @@ env/
 .uv/
 
 # Project data — never commit videos, models, or generated artifacts
+data/
 uploads/
 clips/
 cache/

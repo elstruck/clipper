@@ -7,9 +7,11 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 1** — end-to-end CLI pipeline. Chunks long videos, captions each
-chunk with Marlin, merges into a global timeline, supports text search +
-per-chunk `find()` fanout, cuts clips via ffmpeg. No web UI yet.
+**Phase 2** — FastAPI backend. CLI pipeline from Phase 1 is now also
+reachable over HTTP: upload videos, kick off indexing as background jobs,
+search via text or `find()` fanout, cut clips, stream the source and
+clips with byte-range support. SQLite tracks videos, jobs, and clips.
+No web UI yet — that's Phase 3.
 
 ## Requirements
 
@@ -76,7 +78,46 @@ uv run clip search scripts/_long_test_clip.mp4 "fractal" --fanout
 uv run clip cut scripts/_long_test_clip.mp4 120 180 -o /tmp/fractal.mp4
 ```
 
-## Architecture (Phase 1)
+## HTTP API
+
+Start the server:
+
+```bash
+uv run clip serve              # listens on 0.0.0.0:8765 by default settings in CLI vary
+uv run clip serve --port 8765  # uvicorn defaults: host 0.0.0.0
+```
+
+Interactive docs are auto-generated at `/docs` (Swagger) and `/redoc`. Key routes:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/videos` | Multipart upload — returns `{id, ...}` |
+| `GET`  | `/api/videos` | List all uploaded videos |
+| `GET`  | `/api/videos/{id}` | Video metadata |
+| `DELETE` | `/api/videos/{id}` | Delete video + index sidecar |
+| `POST` | `/api/videos/{id}/index` | Enqueue indexing job — returns `{job_id}` |
+| `GET`  | `/api/videos/{id}/events` | Cached timeline JSON |
+| `POST` | `/api/videos/{id}/search` | Synchronous text or fanout search |
+| `POST` | `/api/videos/{id}/search/async` | Enqueue fanout as a job (for long videos) |
+| `GET`  | `/api/jobs/{id}` | Job status + progress + `result` JSON |
+| `GET`  | `/api/jobs` | List recent jobs |
+| `POST` | `/api/clips` | Cut a clip from `{video_id, start, end}` |
+| `GET`  | `/api/clips` | List clips |
+| `GET`  | `/media/videos/{id}` | Stream source with HTTP Range support |
+| `GET`  | `/media/clips/{id}` | Stream rendered clip |
+
+Storage layout (override with `CLIPPER_DATA_ROOT`):
+
+```
+data/
+├── uploads/<video_id>.<ext>
+├── clips/<clip_id>.mp4
+└── clipper.db          # SQLite: videos, jobs, clips
+```
+
+Index JSON sidecars stay next to the source video as `<filename>.index.json`.
+
+## Architecture
 
 ```
 src/clipper/
@@ -84,9 +125,13 @@ src/clipper/
 ├── marlin.py      # lazy model singleton, caption/find wrappers
 ├── chunker.py     # ffprobe duration, chunk windowing, ffmpeg chunk extraction
 ├── pipeline.py    # index_video: extract → caption → merge → JSON
-├── search.py      # text_search (token overlap) + find_fanout (per-chunk grounding)
-├── clipper.py     # ffmpeg cut wrapper (stream copy or re-encode)
-└── __main__.py    # typer CLI, registered as the `clip` script entry point
+├── search.py      # text_search + find_fanout
+├── clipper.py     # ffmpeg cut wrapper
+├── storage.py     # filesystem layout (data root, uploads/, clips/, db)
+├── db.py          # sqlite schema + DAO
+├── jobs.py        # single-worker thread + progress tracking
+├── server.py      # FastAPI app
+└── __main__.py    # typer CLI (`clip` script)
 ```
 
 ### Notes & gotchas
