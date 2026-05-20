@@ -7,11 +7,11 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 2** — FastAPI backend. CLI pipeline from Phase 1 is now also
-reachable over HTTP: upload videos, kick off indexing as background jobs,
-search via text or `find()` fanout, cut clips, stream the source and
-clips with byte-range support. SQLite tracks videos, jobs, and clips.
-No web UI yet — that's Phase 3.
+**Phase 3** — Web UI MVP. React + Vite frontend served by FastAPI on a
+single port. Library page for uploads and indexing; video page with
+player, scrollable events list (synced to the playhead), search panel
+(text + find modes), and a clip list with download links. No
+frame-accurate timeline editor yet — that's Phase 4.
 
 ## Requirements
 
@@ -78,13 +78,35 @@ uv run clip search scripts/_long_test_clip.mp4 "fractal" --fanout
 uv run clip cut scripts/_long_test_clip.mp4 120 180 -o /tmp/fractal.mp4
 ```
 
+## Web UI
+
+```bash
+# 1. Build the frontend (one-time, or whenever web/src changes)
+cd web && npm install && npm run build
+
+# 2. Start the server — serves the built UI at /, API at /api/*, media at /media/*
+uv run clip serve
+```
+
+Then open <http://127.0.0.1:8000> (or whatever host/port you bound to).
+
+For frontend development with hot reload, run the API and the Vite dev server in two terminals:
+
+```bash
+# terminal 1
+uv run clip serve --port 8765
+
+# terminal 2
+cd web && npm run dev   # http://127.0.0.1:5173, proxies /api + /media to :8765
+```
+
 ## HTTP API
 
 Start the server:
 
 ```bash
-uv run clip serve              # listens on 0.0.0.0:8765 by default settings in CLI vary
-uv run clip serve --port 8765  # uvicorn defaults: host 0.0.0.0
+uv run clip serve              # default: 0.0.0.0:8000
+uv run clip serve --port 8765  # custom port
 ```
 
 Interactive docs are auto-generated at `/docs` (Swagger) and `/redoc`. Key routes:
@@ -130,8 +152,20 @@ src/clipper/
 ├── storage.py     # filesystem layout (data root, uploads/, clips/, db)
 ├── db.py          # sqlite schema + DAO
 ├── jobs.py        # single-worker thread + progress tracking
-├── server.py      # FastAPI app
+├── server.py      # FastAPI app (+ static mount for web/dist)
 └── __main__.py    # typer CLI (`clip` script)
+
+web/
+├── src/
+│   ├── api.ts            # typed fetch wrappers for the FastAPI routes
+│   ├── App.tsx           # root layout w/ react-router outlet
+│   ├── main.tsx          # Vite entry, router config
+│   ├── index.css         # dark theme tokens + components
+│   └── routes/
+│       ├── Library.tsx   # uploads + grid of videos w/ status polling
+│       └── Video.tsx     # player + events list + search + clip list
+├── vite.config.ts        # dev proxy of /api + /media to FastAPI
+└── dist/                 # built bundle (served by FastAPI at /)
 ```
 
 ### Notes & gotchas

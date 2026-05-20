@@ -22,6 +22,7 @@ from typing import Optional
 import aiofiles
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from clipper import clipper as clipper_mod
@@ -295,3 +296,31 @@ def stream_clip(clip_id: str, request: Request) -> Response:
     if not path.exists():
         raise HTTPException(404, "clip file missing on disk")
     return _byte_range_response(path, request.headers.get("range"))
+
+
+# ---------------- frontend (production build) ----------------
+# Mounted last so /api and /media routes win. Falls back to index.html
+# for client-side React Router paths.
+
+_WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
+
+if _WEB_DIST.exists():
+    @app.get("/")
+    def _serve_index() -> FileResponse:
+        return FileResponse(_WEB_DIST / "index.html")
+
+    # Catch-all for client-side routes (must come AFTER the API routes).
+    @app.get("/videos/{video_id}")
+    def _serve_video_route(video_id: str) -> FileResponse:  # noqa: ARG001
+        return FileResponse(_WEB_DIST / "index.html")
+
+    # Static asset mount for /assets/*, /*.svg, etc.
+    app.mount("/", StaticFiles(directory=_WEB_DIST, html=False), name="frontend")
+else:
+    @app.get("/")
+    def _no_frontend() -> dict:
+        return {
+            "status": "ok",
+            "frontend": "not built — run `cd web && npm run build`",
+            "docs": "/docs",
+        }
