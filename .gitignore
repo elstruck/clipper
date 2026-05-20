@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv
+.uv/
+
+# Project data — never commit videos, models, or generated artifacts
+uploads/
+clips/
+cache/
+models/
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.m4v
+
+# Caption / index sidecars
+*.events.json
+*.index.json
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / frontend (later phases)
+node_modules/
+dist/
+.vite/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Environment
+.env
+.env.local

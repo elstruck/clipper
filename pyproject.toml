@@ -1,0 +1,27 @@
+[project]
+name = "marlin-clipper"
+version = "0.1.0"
+description = "Local web tool to find and clip moments in long videos using Marlin-2B + ffmpeg"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "torch>=2.11.0",
+    "torchvision",
+    "transformers>=5.7.0",
+    "torchcodec",
+    "qwen-vl-utils>=0.0.14",
+    "av",
+    "pillow",
+    "accelerate",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+]
+
+[tool.uv]
+# Marlin-2B will be loaded via trust_remote_code; nothing else special needed.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
