@@ -348,16 +348,18 @@ wheels = [
 [[package]]
 name = "marlin-clipper"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "av" },
     { name = "pillow" },
     { name = "qwen-vl-utils" },
+    { name = "rich" },
     { name = "torch" },
     { name = "torchcodec" },
     { name = "torchvision" },
     { name = "transformers" },
+    { name = "typer" },
 ]
 
 [package.dev-dependencies]
@@ -371,10 +373,12 @@ requires-dist = [
     { name = "av" },
     { name = "pillow" },
     { name = "qwen-vl-utils", specifier = ">=0.0.14" },
+    { name = "rich", specifier = ">=13" },
     { name = "torch", specifier = ">=2.11.0" },
     { name = "torchcodec" },
     { name = "torchvision" },
     { name = "transformers", specifier = ">=5.7.0" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 
 [package.metadata.requires-dev]
