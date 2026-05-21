@@ -20,16 +20,41 @@ from pathlib import Path
 FFMPEG_LIB = os.environ.get("VIDPROC_FFMPEG_LIB", "/home/elstruck/miniconda3/lib")
 
 
-def _ensure_ffmpeg_libs() -> None:
-    if not Path(FFMPEG_LIB).exists():
-        return
+def _nvidia_cu12_lib_dirs() -> list[str]:
+    """Find cu12 nvidia .so paths inside the venv so ctranslate2 can dlopen them.
+
+    faster-whisper / ctranslate2 link against libcublas.so.12 and libcudnn.so.9,
+    which the `nvidia-cublas-cu12` + `nvidia-cudnn-cu12` packages ship under
+    `<site-packages>/nvidia/<lib>/lib/`. They aren't auto-added to LD_LIBRARY_PATH.
+    """
+    out: list[str] = []
+    base = Path(sys.executable).resolve().parents[1] / "lib"
+    for child in base.glob("python*/site-packages/nvidia/*/lib"):
+        if any(child.glob("*.so*")):
+            out.append(str(child))
+    return out
+
+
+def _ensure_runtime_libs() -> None:
     if os.environ.get("_VIDPROC_LD_FIXED"):
         return
-    current = os.environ.get("LD_LIBRARY_PATH", "")
-    if FFMPEG_LIB in current.split(":"):
+
+    needed: list[str] = []
+    if Path(FFMPEG_LIB).exists():
+        needed.append(FFMPEG_LIB)
+    needed.extend(_nvidia_cu12_lib_dirs())
+
+    if not needed:
         return
+
+    current = os.environ.get("LD_LIBRARY_PATH", "")
+    current_parts = current.split(":") if current else []
+    missing = [p for p in needed if p not in current_parts]
+    if not missing:
+        return
+
     new_env = dict(os.environ)
-    new_env["LD_LIBRARY_PATH"] = f"{FFMPEG_LIB}:{current}" if current else FFMPEG_LIB
+    new_env["LD_LIBRARY_PATH"] = ":".join(missing + current_parts)
     new_env["_VIDPROC_LD_FIXED"] = "1"
     os.execve(sys.executable, [sys.executable] + sys.argv, new_env)
 
@@ -43,5 +68,5 @@ def _set_marlin_defaults() -> None:
     os.environ.setdefault("VIDEO_MAX_PIXELS", "200704")
 
 
-_ensure_ffmpeg_libs()
+_ensure_runtime_libs()
 _set_marlin_defaults()

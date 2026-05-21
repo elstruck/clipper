@@ -42,24 +42,24 @@ def index(
     window: float = typer.Option(90.0, help="Chunk window (seconds)"),
     overlap: float = typer.Option(8.0, help="Chunk overlap (seconds)"),
     reencode: bool = typer.Option(False, "--reencode", help="Frame-accurate chunk extraction (slower)"),
+    no_transcribe: bool = typer.Option(False, "--no-transcribe", help="Skip Whisper transcription"),
 ) -> None:
     """Build a caption index for VIDEO, write <video>.index.json."""
-    def _report(chunk, i, total):
-        console.print(
-            f"  [dim]chunk {i + 1}/{total}[/]  "
-            f"[cyan]{_fmt(chunk.start)} → {_fmt(chunk.end)}[/]"
-        )
+    def _report(message, current, total):
+        console.print(f"  [dim]{current}/{total}[/]  [cyan]{message}[/]")
 
     console.print(f"[bold]indexing[/] {video}")
     t0 = time.time()
     result = pipeline.index_video(
         str(video), window=window, overlap=overlap,
-        reencode=reencode, progress=_report,
+        reencode=reencode, transcribe=not no_transcribe, progress=_report,
     )
     elapsed = time.time() - t0
+    n_trans = len(result.get("transcript", {}).get("segments", [])) if result.get("transcript") else 0
     console.print(
         f"[green]done[/] in {elapsed:.1f}s — "
-        f"{len(result['chunks'])} chunks, {len(result['events'])} events"
+        f"{len(result['chunks'])} chunks, {len(result['events'])} events, "
+        f"{n_trans} transcript segments"
     )
     console.print(f"  wrote {pipeline.index_path_for(video)}")
 

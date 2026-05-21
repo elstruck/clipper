@@ -35,33 +35,55 @@ class SearchHit:
     description: str
     score: float
     chunk_index: int
+    source: str = "caption"  # "caption" | "transcript" | "find"
 
 
-def text_search(index: dict, query: str, *, limit: int = 20) -> list[SearchHit]:
-    """Rank events by overlap between query tokens and event description tokens.
-
-    Falls back to substring match for queries that don't tokenize meaningfully.
-    """
-    q_tokens = set(_tokenize(query))
+def _score_text(query: str, q_tokens: set[str], text: str) -> float:
+    """Return a score >0 if `text` plausibly matches `query`, else 0."""
+    t_lower = text.lower()
     q_lower = query.lower().strip()
+    if q_tokens:
+        t_tokens = set(_tokenize(text))
+        overlap = len(q_tokens & t_tokens)
+        if overlap == 0 and q_lower not in t_lower:
+            return 0.0
+        return overlap + (0.5 if q_lower in t_lower else 0.0)
+    return 1.0 if q_lower and q_lower in t_lower else 0.0
+
+
+def text_search(
+    index: dict, query: str, *, limit: int = 20,
+    include_captions: bool = True, include_transcript: bool = True,
+) -> list[SearchHit]:
+    """Rank caption events and transcript segments by token overlap with query."""
+    q_tokens = set(_tokenize(query))
     hits: list[SearchHit] = []
-    for ev in index.get("events", []):
-        desc_lower = ev["description"].lower()
-        if q_tokens:
-            ev_tokens = set(_tokenize(ev["description"]))
-            overlap = len(q_tokens & ev_tokens)
-            if overlap == 0 and q_lower not in desc_lower:
+
+    if include_captions:
+        for ev in index.get("events", []):
+            s = _score_text(query, q_tokens, ev["description"])
+            if s <= 0:
                 continue
-            score = overlap + (0.5 if q_lower in desc_lower else 0.0)
-        else:
-            if q_lower not in desc_lower:
+            hits.append(SearchHit(
+                start=ev["start"], end=ev["end"],
+                description=ev["description"], score=s,
+                chunk_index=ev.get("chunk_index", 0),
+                source="caption",
+            ))
+
+    if include_transcript:
+        transcript = index.get("transcript") or {}
+        for seg in transcript.get("segments") or []:
+            s = _score_text(query, q_tokens, seg["text"])
+            if s <= 0:
                 continue
-            score = 1.0
-        hits.append(SearchHit(
-            start=ev["start"], end=ev["end"],
-            description=ev["description"], score=score,
-            chunk_index=ev.get("chunk_index", 0),
-        ))
+            hits.append(SearchHit(
+                start=seg["start"], end=seg["end"],
+                description=seg["text"], score=s,
+                chunk_index=-1,
+                source="transcript",
+            ))
+
     hits.sort(key=lambda h: (-h.score, h.start))
     return hits[:limit]
 
@@ -109,6 +131,7 @@ def find_fanout(
                 description=result.raw,
                 score=round(score, 3),
                 chunk_index=c.index,
+                source="find",
             ))
     hits.sort(key=lambda h: (-h.score, h.start))
     return hits[:limit]

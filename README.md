@@ -7,15 +7,26 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 7** — Resumable chunked uploads. Multi-gigabyte uploads now
-survive transient network errors: the file is split into 8 MiB chunks,
-each PUT separately to a per-upload session; on failure the client
-backs off and retries, on offset mismatch it resyncs from the server's
-view of `bytes_received` and continues. Cancel button on the uploader.
-Throughput display while uploading.
+**Phase 8** — Audio transcription. Indexing now also runs
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) with the
+`distil-large-v3` model on the same GPU, automatically. The resulting
+transcript ships in the index sidecar with per-segment timestamps,
+language detection, and language confidence. The video page gains a
+"transcript" tab next to captions, and text search now scans both
+tracks — each hit carries a `source` badge so you can tell whether
+the match came from visual captioning, the speech transcript, or
+a find-mode fanout. English-only by default; set
+`CLIPPER_WHISPER_MODEL=large-v3` (or any HF Whisper id) for
+multilingual.
 
-(Phase 6 still active too: one-command `clip dev`, SSE job progress,
-thumbnail pre-warm, fanout confidence scoring.)
+Earlier phases all still active:
+- 1: long-video Marlin pipeline + CLI
+- 2: FastAPI backend (upload, index, search, clips)
+- 3: React web UI served by FastAPI
+- 4: canvas timeline clip editor
+- 5: shared-token auth + deployment guide
+- 6: one-command `clip dev` + SSE progress + thumbnail pre-warm + fanout scoring
+- 7: resumable chunked uploads
 
 ## Requirements
 
@@ -206,6 +217,7 @@ src/clipper/
 ├── db.py          # sqlite schema + DAO
 ├── jobs.py        # single-worker thread + progress tracking
 ├── thumbnails.py  # ffmpeg sprite generation + caching for the timeline editor
+├── transcribe.py  # faster-whisper wrapper (distil-large-v3 by default)
 ├── server.py      # FastAPI app (+ static mount for web/dist)
 └── __main__.py    # typer CLI (`clip` script)
 

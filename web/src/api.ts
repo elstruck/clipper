@@ -89,6 +89,21 @@ export interface ChunkInfo {
   end: number
 }
 
+export interface TranscriptSegment {
+  start: number
+  end: number
+  text: string
+  no_speech_prob?: number
+}
+
+export interface Transcript {
+  language?: string
+  language_probability?: number
+  duration?: number
+  segments: TranscriptSegment[]
+  error?: string
+}
+
 export interface VideoIndex {
   video: string
   duration: number
@@ -97,7 +112,10 @@ export interface VideoIndex {
   chunks: ChunkInfo[]
   scenes: string[]
   events: EventRow[]
+  transcript: Transcript | null
 }
+
+export type HitSource = 'caption' | 'transcript' | 'find'
 
 export interface SearchHit {
   start: number
@@ -105,6 +123,7 @@ export interface SearchHit {
   description: string
   score: number
   chunk_index: number
+  source: HitSource
 }
 
 export interface SearchResponse {

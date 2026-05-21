@@ -192,3 +192,18 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); }
   padding: 8px 12px;
 }
 .tabs button.active { border-bottom-color: var(--accent); color: var(--accent); }
+
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+.badge.caption    { background: #1f2a3a; color: #8ebdff; }
+.badge.transcript { background: #1f3a2a; color: var(--green); }
+.badge.find       { background: #3a2f1f; color: var(--yellow); }

@@ -23,7 +23,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, Optional
 
-from clipper import marlin
+from clipper import marlin, transcribe as transcribe_mod
 from clipper.chunker import (
     Chunk,
     DEFAULT_OVERLAP_SEC,
@@ -66,23 +66,34 @@ def _merge_overlap(events: list[dict], step: float) -> list[dict]:
     return kept
 
 
+ProgressFn = Callable[[str, int, int], None]
+"""progress(message, current, total) — current is 1-indexed steps done."""
+
+
 def index_video(
     video_path: str | Path,
     *,
     window: float = DEFAULT_WINDOW_SEC,
     overlap: float = DEFAULT_OVERLAP_SEC,
     reencode: bool = False,
-    progress: Optional[Callable[[Chunk, int, int], None]] = None,
+    transcribe: bool = True,
+    progress: Optional[ProgressFn] = None,
 ) -> dict:
     """Run the full indexing pipeline on a video.
 
-    Extracts each chunk to a temp file (auto-cleaned), captions it, offsets
-    chunk-local timestamps into global time, merges overlap, writes the
-    index JSON next to the source video.
+    Two phases:
+    1. Per-chunk Marlin captioning, offset into global time, dedupe overlap.
+    2. Single-pass Whisper transcription of the full audio (when enabled).
     """
     video_path = str(video_path)
     duration = probe_duration(video_path)
     chunks = chunk_video(duration, window=window, overlap=overlap)
+
+    total_steps = len(chunks) + (1 if transcribe else 0)
+
+    def _emit(msg: str, current: int) -> None:
+        if progress:
+            progress(msg, current, total_steps)
 
     model = marlin.get_model()
     scenes: list[str] = []
@@ -91,8 +102,11 @@ def index_video(
     with tempfile.TemporaryDirectory(prefix="clipper-chunks-") as tmpdir:
         tmproot = Path(tmpdir)
         for c in chunks:
-            if progress:
-                progress(c, c.index, len(chunks))
+            _emit(
+                f"captioning chunk {c.index + 1}/{len(chunks)} "
+                f"({c.start:.0f}s → {c.end:.0f}s)",
+                c.index + 1,
+            )
             chunk_path = tmproot / f"chunk_{c.index:04d}.mp4"
             extract_chunk(video_path, c, chunk_path, reencode=reencode)
 
@@ -122,6 +136,23 @@ def index_video(
         ev.pop("_chunk_start", None)
     merged.sort(key=lambda e: e["start"])
 
+    transcript: Optional[dict] = None
+    if transcribe:
+        _emit(f"transcribing audio ({duration:.0f}s)", len(chunks) + 1)
+
+        def _trans_progress(cur_sec: float, total_sec: float) -> None:
+            _emit(
+                f"transcribing {cur_sec:.0f}s of {total_sec:.0f}s",
+                len(chunks) + 1,
+            )
+
+        try:
+            transcript = transcribe_mod.transcribe(video_path, progress=_trans_progress)
+        except Exception as e:
+            # Don't fail the whole index just because transcription broke
+            # (e.g. video has no audio stream).
+            transcript = {"error": f"{type(e).__name__}: {e}", "segments": []}
+
     out = {
         "video": video_path,
         "duration": duration,
@@ -130,6 +161,7 @@ def index_video(
         "chunks": [asdict(c) for c in chunks],
         "scenes": scenes,
         "events": merged,
+        "transcript": transcript,
     }
 
     out_path = index_path_for(video_path)

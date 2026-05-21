@@ -19,15 +19,18 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from clipper import db, pipeline, thumbnails
-from clipper.chunker import Chunk, probe_duration
+from clipper.chunker import probe_duration
 
 log = logging.getLogger(__name__)
+
+
+ProgressCb = Callable[[str, int, int], None]
 
 
 @dataclass
 class JobRequest:
     job_id: str
-    func: Callable[[Callable[[Chunk, int, int], None]], Any]
+    func: Callable[[ProgressCb], Any]
 
 
 _queue: queue.Queue[JobRequest] = queue.Queue()
@@ -44,12 +47,12 @@ def _run_worker() -> None:
         log.info("job %s starting", req.job_id)
         db.update_job(req.job_id, status="running", started_at=time.time())
 
-        def _progress_cb(chunk: Chunk, i: int, total: int) -> None:
+        def _progress_cb(message: str, current: int, total: int) -> None:
             db.update_job(
                 req.job_id,
-                progress_current=i + 1,
+                progress_current=current,
                 progress_total=total,
-                message=f"chunk {i + 1}/{total} ({chunk.start:.0f}s → {chunk.end:.0f}s)",
+                message=message,
             )
 
         try:
@@ -82,7 +85,7 @@ def submit_index_job(video_id: str) -> str:
 
     job_id = db.create_job(video_id, "index")
 
-    def _job(progress_cb: Callable[[Chunk, int, int], None]) -> None:
+    def _job(progress_cb: ProgressCb) -> None:
         # Probe duration up front so the video row shows it even before chunks finish.
         path = video["path"]
         if not video.get("duration"):
@@ -118,7 +121,7 @@ def submit_find_fanout_job(video_id: str, query: str) -> str:
         raise KeyError(f"unknown video: {video_id}")
     job_id = db.create_job(video_id, "find_fanout")
 
-    def _job(progress_cb: Callable[[Chunk, int, int], None]) -> None:
+    def _job(progress_cb: ProgressCb) -> None:
         import json
         from dataclasses import asdict
         from clipper import search as search_mod
@@ -126,9 +129,8 @@ def submit_find_fanout_job(video_id: str, query: str) -> str:
         idx = pipeline.load_index(video["path"])
         if idx is None:
             raise RuntimeError(f"video {video_id} not indexed yet")
-        # The current find_fanout doesn't accept a progress cb — we approximate
-        # by reporting just once at the start. (Will refine in a later phase.)
-        progress_cb(Chunk(0, 0.0, 0.0), 0, len(idx.get("chunks", [])))
+        n_chunks = len(idx.get("chunks", []))
+        progress_cb(f"searching {n_chunks} chunks for {query!r}", 0, n_chunks)
         hits = search_mod.find_fanout(idx, video["path"], query)
         db.update_job(
             job_id,
