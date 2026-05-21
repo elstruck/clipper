@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from clipper import db, pipeline
+from clipper import db, pipeline, thumbnails
 from clipper.chunker import Chunk, probe_duration
 
 log = logging.getLogger(__name__)
@@ -95,6 +95,12 @@ def submit_index_job(video_id: str) -> str:
         db.update_video(video_id, status="indexing")
         try:
             pipeline.index_video(path, progress=progress_cb)
+            # Pre-warm the thumbnail sprite now so the clip editor opens instantly.
+            try:
+                thumbnails.generate_sprite(video_id, path)
+            except Exception:
+                # Non-fatal: editor will regenerate on demand if this failed.
+                log.exception("thumbnail pre-warm failed for %s", video_id)
             db.update_video(video_id, status="indexed", indexed_at=time.time())
         except Exception:
             db.update_video(video_id, status="failed")

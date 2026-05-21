@@ -12,16 +12,18 @@ from __future__ import annotations
 # before transformers/torch get loaded by any sub-import.
 import clipper  # noqa: F401
 
+import asyncio
+import json
 import logging
 import mimetypes
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import aiofiles
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -248,6 +250,36 @@ def get_job(job_id: str) -> dict:
     if j is None:
         raise HTTPException(404, f"job not found: {job_id}")
     return j
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str, request: Request) -> StreamingResponse:
+    """Server-Sent Events stream of job state changes; closes when job ends."""
+
+    async def stream() -> AsyncIterator[bytes]:
+        last_state: Optional[tuple] = None
+        # initial heartbeat so the browser knows the connection is live
+        yield b": connected\n\n"
+        while True:
+            if await request.is_disconnected():
+                return
+            j = db.get_job(job_id)
+            if j is None:
+                yield f"event: error\ndata: {json.dumps({'detail': 'job not found'})}\n\n".encode()
+                return
+            state = (j["status"], j["progress_current"], j["progress_total"], j["message"])
+            if state != last_state:
+                yield f"data: {json.dumps(j)}\n\n".encode()
+                last_state = state
+            if j["status"] in ("done", "failed"):
+                return
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/jobs")

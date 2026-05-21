@@ -97,12 +97,18 @@ def find_fanout(
             chunk_len = c.end - c.start
             ls = max(0.0, min(local_start, chunk_len))
             le = max(ls, min(local_end, chunk_len))
+            # Confidence heuristic: Marlin doesn't surface logprobs, but when it
+            # has no real match it tends to return a span covering most of the
+            # chunk. Penalize spans whose length approaches the chunk length.
+            span_len = le - ls
+            coverage = span_len / chunk_len if chunk_len > 0 else 1.0
+            score = max(0.0, 1.0 - coverage)
             hits.append(SearchHit(
                 start=round(c.start + ls, 3),
                 end=round(c.start + le, 3),
                 description=result.raw,
-                score=1.0,  # Marlin doesn't surface confidence; rank by chunk order.
+                score=round(score, 3),
                 chunk_index=c.index,
             ))
-    hits.sort(key=lambda h: h.start)
+    hits.sort(key=lambda h: (-h.score, h.start))
     return hits[:limit]

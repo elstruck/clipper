@@ -7,10 +7,14 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 5** — Polish & share. Adds shared-token auth (header or
-query param), a sign-in screen on the frontend, a disk-usage chip in
-the header, and a deployment guide for getting non-technical
-teammates onto the tool over LAN or Tailscale.
+**Phase 6** — Dev UX + live progress + fanout scoring. One-command
+dev start (`uv run clip dev` or `cd web && npm run dev` — both bring
+up the FastAPI server and Vite dev server together and open the
+browser). Indexing progress streams over Server-Sent Events instead
+of polling. Thumbnails are pre-warmed during indexing so the clip
+editor opens instantly. Fanout searches now return a confidence
+score (penalizes spans covering whole chunks), with a UI slider to
+filter and a per-hit dismiss button.
 
 ## Requirements
 
@@ -120,25 +124,25 @@ for the loopback adapter only.
 
 ## Web UI
 
-```bash
-# 1. Build the frontend (one-time, or whenever web/src changes)
-cd web && npm install && npm run build
+### Quickest start — one command
 
-# 2. Start the server — serves the built UI at /, API at /api/*, media at /media/*
+```bash
+uv run clip dev          # equivalent to: cd web && npm run dev
+```
+
+Both forms start the FastAPI API on `127.0.0.1:8765`, start the Vite
+dev server on `127.0.0.1:5173`, and open the browser. Ctrl-C kills
+both. First run also auto-installs `web/node_modules` if missing.
+
+### Production-style (single port)
+
+```bash
+cd web && npm install && npm run build && cd ..
 uv run clip serve
 ```
 
-Then open <http://127.0.0.1:8000> (or whatever host/port you bound to).
-
-For frontend development with hot reload, run the API and the Vite dev server in two terminals:
-
-```bash
-# terminal 1
-uv run clip serve --port 8765
-
-# terminal 2
-cd web && npm run dev   # http://127.0.0.1:5173, proxies /api + /media to :8765
-```
+The built frontend is served by FastAPI from `web/dist`. Default
+port is 8000; pass `--port` to change.
 
 ## HTTP API
 
@@ -162,6 +166,7 @@ Interactive docs are auto-generated at `/docs` (Swagger) and `/redoc`. Key route
 | `POST` | `/api/videos/{id}/search` | Synchronous text or fanout search |
 | `POST` | `/api/videos/{id}/search/async` | Enqueue fanout as a job (for long videos) |
 | `GET`  | `/api/jobs/{id}` | Job status + progress + `result` JSON |
+| `GET`  | `/api/jobs/{id}/events` | Server-Sent Events stream of state changes; closes when job ends |
 | `GET`  | `/api/jobs` | List recent jobs |
 | `POST` | `/api/clips` | Cut a clip from `{video_id, start, end}` |
 | `GET`  | `/api/clips` | List clips |

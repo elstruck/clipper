@@ -139,6 +139,64 @@ def serve(
 
 
 @app.command()
+def dev(
+    api_port: int = typer.Option(8765, help="FastAPI port"),
+    web_port: int = typer.Option(5173, help="Vite dev port"),
+    no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open the browser"),
+) -> None:
+    """Start API + Vite dev server together (Ctrl-C kills both)."""
+    import os
+    import shutil
+    import signal
+    import subprocess
+    import sys
+
+    web_dir = Path(__file__).resolve().parents[2] / "web"
+    if not (web_dir / "node_modules").exists():
+        console.print("[yellow]web/node_modules missing — running `npm install`[/]")
+        npm = shutil.which("npm")
+        if not npm:
+            console.print("[red]npm not found on PATH[/]")
+            raise typer.Exit(1)
+        subprocess.run([npm, "install"], cwd=web_dir, check=True)
+
+    npx = shutil.which("npx")
+    if not npx:
+        console.print("[red]npx not found on PATH[/]")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]starting clipper dev[/]")
+    console.print(f"  [blue]api[/] http://127.0.0.1:{api_port}")
+    console.print(f"  [green]web[/] http://127.0.0.1:{web_port}  (proxies /api + /media to :{api_port})")
+
+    vite_args = [npx, "vite", "--port", str(web_port), "--strictPort"]
+    if not no_open:
+        vite_args.append("--open")
+    vite_env = {**os.environ, "VITE_API_TARGET": f"http://127.0.0.1:{api_port}"}
+    vite = subprocess.Popen(vite_args, cwd=web_dir, env=vite_env)
+
+    def _shutdown(*_: object) -> None:
+        if vite.poll() is None:
+            vite.terminate()
+        sys.exit(0)
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    try:
+        import uvicorn
+        uvicorn.run(
+            "clipper.server:app",
+            host="127.0.0.1", port=api_port,
+            log_level="info",
+        )
+    finally:
+        if vite.poll() is None:
+            vite.terminate()
+            try: vite.wait(timeout=5)
+            except subprocess.TimeoutExpired: vite.kill()
+
+
+@app.command()
 def show(
     video: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True),
     events_limit: int = typer.Option(20, help="Show at most N events"),

@@ -36,21 +36,25 @@ export default function VideoRoute() {
 
   useEffect(() => {
     if (video?.status !== 'indexing') { setJob(null); return }
+    let unsub: (() => void) | null = null
     let cancelled = false
-    const poll = async () => {
-      try {
-        const jobs = await api.listJobs(id)
-        const latest = jobs.find((j) => j.type === 'index')
-        if (!cancelled) setJob(latest ?? null)
-        if (latest && (latest.status === 'done' || latest.status === 'failed')) {
-          void refreshVideo()
-          void refreshIndex()
-        }
-      } catch { /* ignore */ }
-    }
-    void poll()
-    const t = setInterval(poll, 1500)
-    return () => { cancelled = true; clearInterval(t) }
+    void api.listJobs(id).then((jobs) => {
+      if (cancelled) return
+      const latest = jobs.find((j) => j.type === 'index')
+      if (!latest) return
+      setJob(latest)
+      if (latest.status === 'done' || latest.status === 'failed') {
+        void refreshVideo()
+        void refreshIndex()
+        return
+      }
+      unsub = api.subscribeJob(
+        latest.id,
+        (j) => { if (!cancelled) setJob(j) },
+        () => { if (!cancelled) { void refreshVideo(); void refreshIndex() } },
+      )
+    })
+    return () => { cancelled = true; unsub?.() }
   }, [id, video?.status, refreshVideo, refreshIndex])
 
   const startIndex = async () => {
@@ -237,10 +241,12 @@ function SearchPanel({
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [minScore, setMinScore] = useState(0.3)
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
 
   const submit = async () => {
     if (!query.trim()) return
-    setBusy(true); setErr(null)
+    setBusy(true); setErr(null); setDismissed(new Set())
     try {
       const r = await api.search(videoId, query.trim(), mode === 'fanout')
       setHits(r.hits)
@@ -255,6 +261,22 @@ function SearchPanel({
       : 'describe a moment (e.g. "person waves at the camera")',
     [mode],
   )
+
+  const visible = useMemo(() => {
+    if (!hits) return null
+    return hits.filter((h) => {
+      const key = `${h.chunk_index}:${h.start}:${h.end}`
+      if (dismissed.has(key)) return false
+      if (mode === 'fanout' && h.score < minScore) return false
+      return true
+    })
+  }, [hits, mode, minScore, dismissed])
+
+  const dismiss = (h: SearchHit) => {
+    const next = new Set(dismissed)
+    next.add(`${h.chunk_index}:${h.start}:${h.end}`)
+    setDismissed(next)
+  }
 
   return (
     <div className="card col">
@@ -276,12 +298,31 @@ function SearchPanel({
       </div>
       {!indexReady && <div className="small muted">index the video to enable search</div>}
       {mode === 'fanout' && indexReady && (
-        <div className="small muted">runs find() on every chunk — slower (~3–5s per chunk), but works on vocabulary mismatch</div>
+        <div className="small muted">
+          runs find() on every chunk — slower, but works around caption vocabulary mismatch.
+          Confidence drops for spans that cover most of their chunk (likely false positives).
+        </div>
+      )}
+      {mode === 'fanout' && hits && hits.length > 0 && (
+        <div className="row small" style={{ gap: 8 }}>
+          <span className="muted" style={{ minWidth: 80 }}>min confidence</span>
+          <input
+            type="range" min={0} max={1} step={0.05}
+            value={minScore}
+            onChange={(e) => setMinScore(parseFloat(e.target.value))}
+            style={{ width: 120 }}
+          />
+          <span className="mono" style={{ minWidth: 32 }}>{minScore.toFixed(2)}</span>
+          <span className="muted">·</span>
+          <span className="muted">
+            {visible?.length ?? 0} of {hits.length} shown
+          </span>
+        </div>
       )}
       {err && <div className="small" style={{ color: 'var(--red)' }}>{err}</div>}
-      {hits && (
+      {visible && (
         <ul className="event-list">
-          {hits.length === 0 ? <li className="muted">no matches</li> : hits.map((h, i) => (
+          {visible.length === 0 ? <li className="muted">no matches above threshold</li> : visible.map((h, i) => (
             <li key={i}>
               <div className="row" style={{ gap: 6 }}>
                 <span className="ts" onClick={() => onJump(h.start, h.end)} style={{ cursor: 'pointer' }}>
@@ -289,9 +330,13 @@ function SearchPanel({
                 </span>
                 <div className="spacer" />
                 <button className="small" onClick={() => onEdit(h.start, h.end)}>edit clip</button>
+                <button className="small danger" title="hide this hit" onClick={() => dismiss(h)}>×</button>
               </div>
               <span className="desc">{h.description}</span>
-              <span className="meta">chunk {h.chunk_index} · score {h.score.toFixed(1)}</span>
+              <span className="meta">
+                chunk {h.chunk_index} · {(h.end - h.start).toFixed(1)}s
+                {mode === 'fanout' && ` · conf ${h.score.toFixed(2)}`}
+              </span>
             </li>
           ))}
         </ul>

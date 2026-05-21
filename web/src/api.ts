@@ -181,6 +181,26 @@ export const api = {
 
   getJob: (id: string) => authedFetch(`/api/jobs/${id}`).then(json<Job>),
 
+  /** Subscribe to SSE updates for a job. Returns an unsubscribe function. */
+  subscribeJob: (id: string, onUpdate: (j: Job) => void, onEnd?: () => void) => {
+    const es = new EventSource(mediaUrl(`/api/jobs/${id}/events`))
+    es.onmessage = (e) => {
+      try {
+        const j = JSON.parse(e.data) as Job
+        onUpdate(j)
+        if (j.status === 'done' || j.status === 'failed') {
+          es.close()
+          onEnd?.()
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    es.onerror = () => {
+      // EventSource auto-reconnects; only treat as terminal if explicitly closed.
+      if (es.readyState === EventSource.CLOSED) onEnd?.()
+    }
+    return () => es.close()
+  },
+
   listJobs: (video_id?: string) => {
     const q = video_id ? `?video_id=${video_id}` : ''
     return authedFetch(`/api/jobs${q}`).then(json<Job[]>)
