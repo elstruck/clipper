@@ -342,9 +342,10 @@ def get_events(video_id: str) -> dict:
 
 @app.get("/api/analyze/config")
 def analyze_config() -> dict:
+    active = analyze.active_provider()
     return {
-        "enabled": analyze.is_configured(),
-        "model": analyze.DEFAULT_MODEL,
+        "enabled": active is not None,
+        "active": active,
         "default_prompt": analyze.DEFAULT_USER_PROMPT,
     }
 

@@ -143,6 +143,7 @@ export interface SuggestionsPayload {
   suggestions: ClipSuggestion[]
   generated_at: number | null
   model: string | null
+  provider?: 'openai' | 'anthropic' | null
   elapsed_seconds?: number
   usage?: {
     input_tokens?: number
@@ -152,9 +153,15 @@ export interface SuggestionsPayload {
   }
 }
 
+export interface AnalyzeProvider {
+  provider: 'openai' | 'anthropic'
+  base_url: string | null
+  model: string
+}
+
 export interface AnalyzeConfig {
   enabled: boolean
-  model: string
+  active: AnalyzeProvider | null
   default_prompt: string
 }
 

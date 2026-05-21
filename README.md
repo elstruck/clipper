@@ -7,17 +7,33 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
+**Phase 11** — Pluggable LLM provider. The AI clip suggestions can now
+run against any OpenAI-compatible endpoint (vLLM, Ollama, LM Studio,
+llama.cpp server, real OpenAI) or Anthropic Claude. Auto-detection:
+if `OPENAI_BASE_URL` is set, use that; else if `ANTHROPIC_API_KEY` is
+set, use Anthropic; else the feature is disabled. Force a choice
+with `CLIPPER_LLM_PROVIDER=openai|anthropic`. The UI shows which
+provider is active.
+
+```bash
+# Local model (e.g. vLLM-served Qwen on Runpod / your own GPU box):
+export OPENAI_BASE_URL=https://your-vllm-host/v1
+export MODEL_NAME=llm                       # whatever your server uses
+export OPENAI_API_KEY=<token if required>   # placeholder ok for unsecured local
+
+# Or Anthropic Claude:
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
 **Phase 10** — Always-visible clip editor + AI clip suggestions. The
 clip editor lives at the top of the video page now; clicking any
 event, search hit, suggestion, or saved clip *loads its range into
 the editor's handles* rather than opening a new editor each time.
 Explicit "set IN" / "set OUT" buttons next to the existing keyboard
 shortcuts make the manual scrub-and-mark workflow first-class. A new
-AI Suggestions panel (Anthropic Claude via prompt caching) reads the
-caption + transcript track and returns longer, story-shaped clips
-with titles and rationale. The analysis prompt is editable inline
-and re-runnable on demand — change what you're looking for, hit
-re-run, get a new shortlist. Requires `ANTHROPIC_API_KEY`.
+AI Suggestions panel reads the caption + transcript track and
+returns longer, story-shaped clips with titles and rationale. The
+analysis prompt is editable inline and re-runnable on demand.
 
 **Phase 9** — Reading view + multi-select + timeline polish. Captions
 and transcript can now be browsed as a flowing reading view (paragraphs

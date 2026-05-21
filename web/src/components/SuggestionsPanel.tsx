@@ -61,7 +61,11 @@ export default function SuggestionsPanel({ videoId, indexReady, onJump, onEdit }
     <div className="card col" style={{ gap: 10 }}>
       <div className="row">
         <b>AI clip suggestions</b>
-        {payload?.model && <span className="dim small">{payload.model}</span>}
+        {config?.active && (
+          <span className="dim small" title={config.active.base_url ?? ''}>
+            {config.active.provider === 'openai' ? 'local' : 'anthropic'} · {config.active.model}
+          </span>
+        )}
         <div className="spacer" />
         <button
           className="small"
@@ -78,8 +82,9 @@ export default function SuggestionsPanel({ videoId, indexReady, onJump, onEdit }
 
       {config && !config.enabled && (
         <div className="small" style={{ color: 'var(--yellow)' }}>
-          AI suggestions disabled — export <code>ANTHROPIC_API_KEY</code> on the
-          server and restart for this feature to work.
+          AI suggestions disabled — set <code>OPENAI_BASE_URL</code> +{' '}
+          <code>MODEL_NAME</code> (for a local model) or{' '}
+          <code>ANTHROPIC_API_KEY</code> on the server, then restart.
         </div>
       )}
 

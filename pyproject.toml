@@ -24,6 +24,7 @@ dependencies = [
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12",
     "anthropic>=0.40",
+    "openai>=1.50",
 ]
 
 [project.scripts]
