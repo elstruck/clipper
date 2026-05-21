@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from clipper import clipper as clipper_mod
+from clipper import analyze, clipper as clipper_mod
 from clipper import db, jobs, pipeline, thumbnails
 from clipper import search as search_mod
 from clipper.auth import TokenAuthMiddleware, _configured_tokens
@@ -76,6 +76,10 @@ class ClipRequest(BaseModel):
     end: float
     name: Optional[str] = None
     reencode: bool = False
+
+
+class AnalyzeRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=8000)
 
 
 # ---------------- helpers ----------------
@@ -311,6 +315,7 @@ def delete_video(video_id: str) -> dict:
     db.delete_video(video_id)
     src.unlink(missing_ok=True)
     sidecar.unlink(missing_ok=True)
+    analyze.suggestions_path_for(src).unlink(missing_ok=True)
     thumbnails.sprite_path(video_id).unlink(missing_ok=True)
     return {"deleted": video_id}
 
@@ -331,6 +336,49 @@ def get_events(video_id: str) -> dict:
     if idx is None:
         raise HTTPException(404, "no index yet — run POST /api/videos/{id}/index first")
     return idx
+
+
+# ----- AI clip suggestions -----
+
+@app.get("/api/analyze/config")
+def analyze_config() -> dict:
+    return {
+        "enabled": analyze.is_configured(),
+        "model": analyze.DEFAULT_MODEL,
+        "default_prompt": analyze.DEFAULT_USER_PROMPT,
+    }
+
+
+@app.get("/api/videos/{video_id}/suggestions")
+def get_suggestions(video_id: str) -> dict:
+    v = _video_or_404(video_id)
+    payload = analyze.load(v["path"])
+    if payload is None:
+        return {
+            "prompt": analyze.DEFAULT_USER_PROMPT,
+            "suggestions": [],
+            "generated_at": None,
+            "model": None,
+        }
+    return payload
+
+
+@app.post("/api/videos/{video_id}/suggestions")
+def regenerate_suggestions(video_id: str, req: AnalyzeRequest) -> dict:
+    v = _video_or_404(video_id)
+    idx = pipeline.load_index(v["path"])
+    if idx is None:
+        raise HTTPException(409, "video must be indexed first")
+    try:
+        payload = analyze.analyze(idx, req.prompt)
+    except RuntimeError as e:
+        # ANTHROPIC_API_KEY missing or model returned junk — surface to the UI.
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception("analysis failed for %s", video_id)
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+    analyze.save(v["path"], payload)
+    return payload
 
 
 # ----- search -----

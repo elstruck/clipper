@@ -7,6 +7,18 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
+**Phase 10** — Always-visible clip editor + AI clip suggestions. The
+clip editor lives at the top of the video page now; clicking any
+event, search hit, suggestion, or saved clip *loads its range into
+the editor's handles* rather than opening a new editor each time.
+Explicit "set IN" / "set OUT" buttons next to the existing keyboard
+shortcuts make the manual scrub-and-mark workflow first-class. A new
+AI Suggestions panel (Anthropic Claude via prompt caching) reads the
+caption + transcript track and returns longer, story-shaped clips
+with titles and rationale. The analysis prompt is editable inline
+and re-runnable on demand — change what you're looking for, hit
+re-run, get a new shortlist. Requires `ANTHROPIC_API_KEY`.
+
 **Phase 9** — Reading view + multi-select + timeline polish. Captions
 and transcript can now be browsed as a flowing reading view (paragraphs
 grouped by silence gaps for transcript, scenes grouped by adjacency +
@@ -194,6 +206,9 @@ Interactive docs are auto-generated at `/docs` (Swagger) and `/redoc`. Key route
 | `GET`  | `/api/videos/{id}/events` | Cached timeline JSON |
 | `POST` | `/api/videos/{id}/search` | Synchronous text or fanout search |
 | `POST` | `/api/videos/{id}/search/async` | Enqueue fanout as a job (for long videos) |
+| `GET`  | `/api/analyze/config` | Whether AI suggestions are enabled + default prompt |
+| `GET`  | `/api/videos/{id}/suggestions` | Cached AI clip suggestions (or empty payload) |
+| `POST` | `/api/videos/{id}/suggestions` | Re-run analysis with `{prompt}` body |
 | `GET`  | `/api/jobs/{id}` | Job status + progress + `result` JSON |
 | `GET`  | `/api/jobs/{id}/events` | Server-Sent Events stream of state changes; closes when job ends |
 | `GET`  | `/api/jobs` | List recent jobs |
@@ -230,6 +245,7 @@ src/clipper/
 ├── jobs.py        # single-worker thread + progress tracking
 ├── thumbnails.py  # ffmpeg sprite generation + caching for the timeline editor
 ├── transcribe.py  # faster-whisper wrapper (distil-large-v3 by default)
+├── analyze.py     # Claude-driven clip suggestions over the index sidecar
 ├── server.py      # FastAPI app (+ static mount for web/dist)
 └── __main__.py    # typer CLI (`clip` script)
 
@@ -240,7 +256,9 @@ web/
 │   ├── main.tsx          # Vite entry, router config
 │   ├── index.css         # dark theme tokens + components
 │   ├── components/
-│   │   └── ClipEditor.tsx  # canvas timeline + handles + looping preview
+│   │   ├── ClipEditor.tsx        # canvas timeline + handles + looping preview
+│   │   ├── EventsTimeline.tsx    # tabbed reading/segments views, multi-select
+│   │   └── SuggestionsPanel.tsx  # AI clip suggestions, editable prompt
 │   └── routes/
 │       ├── Library.tsx   # uploads + grid of videos w/ status polling
 │       └── Video.tsx     # player + events list + search + clips + editor

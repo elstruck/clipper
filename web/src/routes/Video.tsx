@@ -5,9 +5,10 @@ import {
 } from '../api'
 import ClipEditor from '../components/ClipEditor'
 import EventsTimeline from '../components/EventsTimeline'
+import SuggestionsPanel from '../components/SuggestionsPanel'
 
 type Mode = 'text' | 'fanout'
-type EditorState = { start: number; end: number } | null
+type RangeHint = { start: number; end: number; nonce: number }
 
 export default function VideoRoute() {
   const { id = '' } = useParams<{ id: string }>()
@@ -16,7 +17,7 @@ export default function VideoRoute() {
   const [clips, setClips] = useState<Clip[]>([])
   const [job, setJob] = useState<Job | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [editor, setEditor] = useState<EditorState>(null)
+  const [rangeHint, setRangeHint] = useState<RangeHint>({ start: 0, end: 10, nonce: 0 })
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const refreshVideo = useCallback(async () => {
@@ -80,9 +81,8 @@ export default function VideoRoute() {
     }
   }, [])
 
-  const openEditor = useCallback((start: number, end: number) => {
-    setEditor({ start, end })
-    // Scroll editor into view after it renders.
+  const loadIntoEditor = useCallback((start: number, end: number) => {
+    setRangeHint((prev) => ({ start, end, nonce: prev.nonce + 1 }))
     setTimeout(() => {
       document.getElementById('clip-editor')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }, 50)
@@ -117,9 +117,9 @@ export default function VideoRoute() {
             if (!v) return
             const t = v.currentTime
             const dur = video.duration ?? t + 5
-            openEditor(Math.max(0, t - 2), Math.min(dur, t + 5))
+            loadIntoEditor(Math.max(0, t - 2), Math.min(dur, t + 5))
           }}>
-            + new clip
+            ⟲ reset to playhead ±5s
           </button>
         </div>
         {job && job.status === 'running' && (
@@ -139,16 +139,14 @@ export default function VideoRoute() {
           </div>
         )}
 
-        {editor && video.duration && (
+        {video.duration && (
           <div id="clip-editor">
             <ClipEditor
               videoId={id}
               duration={video.duration}
-              initialStart={editor.start}
-              initialEnd={editor.end}
+              rangeHint={rangeHint}
               videoEl={videoRef}
               onSave={saveClip}
-              onClose={() => setEditor(null)}
             />
           </div>
         )}
@@ -157,18 +155,24 @@ export default function VideoRoute() {
           <EventsTimeline
             index={index}
             onJump={seekAndPlay}
-            onEdit={openEditor}
+            onEdit={loadIntoEditor}
             player={videoRef}
           />
         )}
       </div>
 
       <div className="col">
-        <SearchPanel videoId={id} indexReady={!!index} onJump={seekAndPlay} onEdit={openEditor} />
+        <SuggestionsPanel
+          videoId={id}
+          indexReady={!!index}
+          onJump={seekAndPlay}
+          onEdit={loadIntoEditor}
+        />
+        <SearchPanel videoId={id} indexReady={!!index} onJump={seekAndPlay} onEdit={loadIntoEditor} />
         <ClipsPanel
           clips={clips}
           onJump={(c) => seekAndPlay(c.start, c.end)}
-          onEdit={(c) => openEditor(c.start, c.end)}
+          onEdit={(c) => loadIntoEditor(c.start, c.end)}
           onDelete={async (clipId) => {
             if (!confirm('Delete this clip?')) return
             try { await api.deleteClip(clipId); void refreshClips() }

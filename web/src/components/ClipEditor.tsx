@@ -14,21 +14,24 @@ interface ThumbnailMeta {
 interface Props {
   videoId: string
   duration: number
-  initialStart: number
-  initialEnd: number
+  /** External range hint. When this changes (e.g. user clicks an event), the
+   *  editor adopts the new IN/OUT positions. Internal drag/key state still
+   *  owns the truth between external updates. */
+  rangeHint: { start: number; end: number; nonce?: number }
   videoEl: React.RefObject<HTMLVideoElement | null>
   onSave: (start: number, end: number, name?: string, reencode?: boolean) => Promise<void>
-  onClose: () => void
 }
 
 type DragMode = null | 'in' | 'out' | 'playhead'
 
 export default function ClipEditor(props: Props) {
-  const { videoId, duration, initialStart, initialEnd, videoEl, onSave, onClose } = props
+  const { videoId, duration, rangeHint, videoEl, onSave } = props
 
-  const [inT, setInT] = useState(Math.max(0, initialStart))
-  const [outT, setOutT] = useState(Math.min(duration, Math.max(initialStart + 0.1, initialEnd)))
-  const [playhead, setPlayhead] = useState(initialStart)
+  const [inT, setInT] = useState(Math.max(0, rangeHint.start))
+  const [outT, setOutT] = useState(
+    Math.min(duration, Math.max(rangeHint.start + 0.1, rangeHint.end)),
+  )
+  const [playhead, setPlayhead] = useState(rangeHint.start)
   const [looping, setLooping] = useState(true)
   const [name, setName] = useState('')
   const [reencode, setReencode] = useState(false)
@@ -39,6 +42,20 @@ export default function ClipEditor(props: Props) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragMode>(null)
+
+  // Adopt external range hints (e.g. user clicked an event / search hit /
+  // existing clip). Re-run whenever start/end/nonce changes — the nonce lets
+  // the parent re-send the same range and still force a reset (e.g. after
+  // "+ new clip").
+  useEffect(() => {
+    const start = Math.max(0, rangeHint.start)
+    const end = Math.min(duration, Math.max(start + 0.1, rangeHint.end))
+    setInT(start)
+    setOutT(end)
+    setPlayhead(start)
+    if (videoEl.current) videoEl.current.currentTime = start
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeHint.start, rangeHint.end, rangeHint.nonce])
 
   // Fetch thumbnail metadata (lazily generates sprite if needed) + load image.
   useEffect(() => {
@@ -293,26 +310,45 @@ export default function ClipEditor(props: Props) {
     setSaving(true); setError(null)
     try {
       await onSave(inT, outT, name.trim() || undefined, reencode)
-      onClose()
+      setName('')
     } catch (e) {
       setError(String(e))
     } finally { setSaving(false) }
   }
 
+  const setInToPlayhead = () => {
+    const v = videoEl.current
+    if (!v) return
+    setInT(Math.min(v.currentTime, outT - 0.05))
+  }
+  const setOutToPlayhead = () => {
+    const v = videoEl.current
+    if (!v) return
+    setOutT(Math.max(v.currentTime, inT + 0.05))
+  }
+
+  const jumpTo = (target: 'in' | 'out') => {
+    const v = videoEl.current
+    if (!v) return
+    v.currentTime = target === 'in' ? inT : outT
+  }
+
   const help = useMemo(() => [
-    '← / → : nudge playhead 0.1 s (Shift = 1 s)',
-    'I / O : set in / out to playhead',
-    'Space : play / pause preview',
-    'drag handles or click strip to scrub',
+    'scrub the player above; click "set IN" / "set OUT" or press I / O',
+    '← / → nudges the playhead 0.1 s (Shift = 1 s)',
+    'click or drag the timeline below to scrub or move handles',
+    'space toggles preview · loop in/out plays the selection on repeat',
   ], [])
 
   return (
     <div className="card col" style={{ gap: 12 }}>
       <div className="row">
         <b>clip editor</b>
-        <span className="muted small">{fmtTime(inT)} → {fmtTime(outT)} · {dur.toFixed(2)}s</span>
+        <span className="muted small mono">{fmtTime(inT)} → {fmtTime(outT)}</span>
+        <span className="dim small">({dur.toFixed(2)}s)</span>
         <div className="spacer" />
-        <button onClick={onClose}>close</button>
+        <button className="small" onClick={() => jumpTo('in')} title="seek the player to IN">⤓ in</button>
+        <button className="small" onClick={() => jumpTo('out')} title="seek the player to OUT">⤓ out</button>
       </div>
 
       <canvas
@@ -328,9 +364,15 @@ export default function ClipEditor(props: Props) {
         onMouseLeave={onMouseUp}
       />
 
-      <div className="row">
+      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <button onClick={setInToPlayhead} title="I — capture the current playhead as the IN point">
+          set IN <span className="dim small">(I)</span>
+        </button>
+        <button onClick={setOutToPlayhead} title="O — capture the current playhead as the OUT point">
+          set OUT <span className="dim small">(O)</span>
+        </button>
         <button onClick={() => (isPlaying() ? pause() : playPreview())}>
-          {isPlaying() ? 'pause' : '▶ preview'}
+          {isPlaying() ? 'pause' : '▶ preview'} <span className="dim small">(space)</span>
         </button>
         <label className="row small" style={{ gap: 6 }}>
           <input type="checkbox" checked={looping} onChange={(e) => setLooping(e.target.checked)} style={{ width: 'auto' }} />
@@ -338,9 +380,8 @@ export default function ClipEditor(props: Props) {
         </label>
         <label className="row small" style={{ gap: 6 }}>
           <input type="checkbox" checked={reencode} onChange={(e) => setReencode(e.target.checked)} style={{ width: 'auto' }} />
-          frame-accurate (slower)
+          frame-accurate
         </label>
-        <div className="spacer" />
       </div>
 
       <div className="row" style={{ gap: 8 }}>
@@ -352,9 +393,12 @@ export default function ClipEditor(props: Props) {
 
       {error && <div className="small" style={{ color: 'var(--red)' }}>{error}</div>}
 
-      <div className="small dim col" style={{ gap: 2 }}>
-        {help.map((h, i) => <span key={i}>{h}</span>)}
-      </div>
+      <details className="small dim">
+        <summary style={{ cursor: 'pointer' }}>keyboard + manual workflow</summary>
+        <div className="col" style={{ gap: 2, marginTop: 4 }}>
+          {help.map((h, i) => <span key={i}>{h}</span>)}
+        </div>
+      </details>
     </div>
   )
 }

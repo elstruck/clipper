@@ -131,6 +131,33 @@ export interface SearchResponse {
   mode: 'text' | 'fanout'
 }
 
+export interface ClipSuggestion {
+  start: number
+  end: number
+  title: string
+  why: string
+}
+
+export interface SuggestionsPayload {
+  prompt: string
+  suggestions: ClipSuggestion[]
+  generated_at: number | null
+  model: string | null
+  elapsed_seconds?: number
+  usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
+}
+
+export interface AnalyzeConfig {
+  enabled: boolean
+  model: string
+  default_prompt: string
+}
+
 export interface Clip {
   id: string
   video_id: string
@@ -309,6 +336,18 @@ export const api = {
 
   deleteClip: (id: string) =>
     authedFetch(`/api/clips/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
+
+  analyzeConfig: () => authedFetch('/api/analyze/config').then(json<AnalyzeConfig>),
+
+  getSuggestions: (videoId: string) =>
+    authedFetch(`/api/videos/${videoId}/suggestions`).then(json<SuggestionsPayload>),
+
+  regenerateSuggestions: (videoId: string, prompt: string) =>
+    authedFetch(`/api/videos/${videoId}/suggestions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    }).then(json<SuggestionsPayload>),
 }
 
 export function fmtTime(seconds: number): string {

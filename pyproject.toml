@@ -23,6 +23,7 @@ dependencies = [
     # the cu13 libs that come with torch 2.12.
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12",
+    "anthropic>=0.40",
 ]
 
 [project.scripts]
