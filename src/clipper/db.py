@@ -58,6 +58,18 @@ CREATE TABLE IF NOT EXISTS clips (
     FOREIGN KEY(video_id) REFERENCES videos(id)
 );
 
+CREATE TABLE IF NOT EXISTS uploads (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    ext TEXT NOT NULL,
+    path TEXT NOT NULL,
+    total_size INTEGER NOT NULL,
+    bytes_received INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'open',     -- open | finalized | aborted
+    created_at REAL NOT NULL,
+    last_chunk_at REAL
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_video ON jobs(video_id);
 CREATE INDEX IF NOT EXISTS idx_clips_video ON clips(video_id);
 """
@@ -229,4 +241,44 @@ def delete_clip(clip_id: str) -> Optional[dict]:
         if not row:
             return None
         c.execute("DELETE FROM clips WHERE id = ?", (clip_id,))
+        return _row_to_dict(row)
+
+
+# -------------------- uploads (chunked / resumable) --------------------
+
+def create_upload(
+    filename: str, ext: str, path: Path, total_size: int,
+    *, upload_id: Optional[str] = None,
+) -> str:
+    uid = upload_id or new_id()
+    with connect() as c:
+        c.execute(
+            "INSERT INTO uploads (id, filename, ext, path, total_size, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'open', ?)",
+            (uid, filename, ext, str(path), total_size, time.time()),
+        )
+    return uid
+
+
+def get_upload(upload_id: str) -> Optional[dict]:
+    with connect() as c:
+        row = c.execute("SELECT * FROM uploads WHERE id = ?", (upload_id,)).fetchone()
+        return _row_to_dict(row) if row else None
+
+
+def update_upload(upload_id: str, **fields: Any) -> None:
+    if not fields:
+        return
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [upload_id]
+    with connect() as c:
+        c.execute(f"UPDATE uploads SET {cols} WHERE id = ?", values)
+
+
+def delete_upload(upload_id: str) -> Optional[dict]:
+    with connect() as c:
+        row = c.execute("SELECT * FROM uploads WHERE id = ?", (upload_id,)).fetchone()
+        if not row:
+            return None
+        c.execute("DELETE FROM uploads WHERE id = ?", (upload_id,))
         return _row_to_dict(row)

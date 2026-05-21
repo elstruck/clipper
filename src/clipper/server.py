@@ -21,8 +21,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
+import time
+
 import aiofiles
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -58,6 +60,14 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     fanout: bool = False
     limit: int = 20
+
+
+class InitUploadRequest(BaseModel):
+    filename: str
+    size: int = Field(..., gt=0)
+
+
+CHUNK_SIZE_HINT = 8 << 20  # 8 MiB — what the client should aim for per PUT
 
 
 class ClipRequest(BaseModel):
@@ -153,6 +163,115 @@ def stats() -> dict:
 
 
 # ----- videos -----
+
+# ----- chunked / resumable uploads -----
+
+@app.post("/api/uploads")
+def init_upload(req: InitUploadRequest) -> dict:
+    """Start a resumable upload. Returns an upload_id + chunk size hint."""
+    ext = Path(req.filename).suffix.lower()
+    if ext not in ALLOWED_EXTS:
+        raise HTTPException(400, f"unsupported extension {ext!r}; allowed: {sorted(ALLOWED_EXTS)}")
+    # Place the file at a temp path keyed off the upload id; finalize will
+    # rename it to the canonical <video_id>.<ext> path.
+    upload_id = db.new_id()
+    dest = UPLOADS_DIR / f"_upload_{upload_id}.{ext.lstrip('.')}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.touch(exist_ok=False)
+    db.create_upload(req.filename, ext, dest, req.size, upload_id=upload_id)
+    return {
+        "upload_id": upload_id,
+        "chunk_size": CHUNK_SIZE_HINT,
+        "bytes_received": 0,
+        "total_size": req.size,
+    }
+
+
+@app.get("/api/uploads/{upload_id}")
+def get_upload(upload_id: str) -> dict:
+    u = db.get_upload(upload_id)
+    if u is None:
+        raise HTTPException(404, "upload not found")
+    return u
+
+
+@app.put("/api/uploads/{upload_id}")
+async def upload_chunk(
+    upload_id: str,
+    request: Request,
+    offset: int = Query(..., ge=0),
+) -> dict:
+    """Append the request body to the upload file at the given offset.
+    409 if offset doesn't match current bytes_received (client must call
+    GET to resync). 410 if the upload was already finalized or aborted."""
+    u = db.get_upload(upload_id)
+    if u is None:
+        raise HTTPException(404, "upload not found")
+    if u["status"] != "open":
+        raise HTTPException(410, f"upload status is {u['status']}")
+    if offset != u["bytes_received"]:
+        raise HTTPException(
+            409,
+            f"offset mismatch — server has {u['bytes_received']}, client sent {offset}",
+        )
+
+    path = Path(u["path"])
+    received = u["bytes_received"]
+    limit = u["total_size"]
+
+    async with aiofiles.open(path, "ab") as f:
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            if received + len(chunk) > limit:
+                # Trim overshoot defensively.
+                chunk = chunk[: limit - received]
+            await f.write(chunk)
+            received += len(chunk)
+            if received >= limit:
+                break
+
+    db.update_upload(upload_id, bytes_received=received, last_chunk_at=time.time())
+    return {"bytes_received": received, "total_size": limit}
+
+
+@app.post("/api/uploads/{upload_id}/finalize")
+def finalize_upload(upload_id: str) -> dict:
+    """Mark the upload complete and create the matching video row."""
+    u = db.get_upload(upload_id)
+    if u is None:
+        raise HTTPException(404, "upload not found")
+    if u["status"] != "open":
+        raise HTTPException(410, f"upload status is {u['status']}")
+    if u["bytes_received"] != u["total_size"]:
+        raise HTTPException(
+            400,
+            f"incomplete: have {u['bytes_received']} of {u['total_size']} bytes",
+        )
+
+    # Adopt the upload row as a video. Reuse the same on-disk path.
+    video_id = db.new_id()
+    new_path = upload_path(video_id, u["ext"])
+    Path(u["path"]).rename(new_path)
+    db.create_video(u["filename"], new_path, u["total_size"], video_id=video_id)
+    db.update_upload(upload_id, status="finalized")
+    return {
+        "id": video_id,
+        "filename": u["filename"],
+        "path": str(new_path),
+        "size": u["total_size"],
+    }
+
+
+@app.delete("/api/uploads/{upload_id}")
+def abort_upload(upload_id: str) -> dict:
+    u = db.get_upload(upload_id)
+    if u is None:
+        raise HTTPException(404, "upload not found")
+    Path(u["path"]).unlink(missing_ok=True)
+    db.update_upload(upload_id, status="aborted")
+    return {"aborted": upload_id}
+
 
 @app.post("/api/videos")
 async def upload_video(file: UploadFile = File(...)) -> dict:

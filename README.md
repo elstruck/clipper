@@ -7,14 +7,15 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
-**Phase 6** — Dev UX + live progress + fanout scoring. One-command
-dev start (`uv run clip dev` or `cd web && npm run dev` — both bring
-up the FastAPI server and Vite dev server together and open the
-browser). Indexing progress streams over Server-Sent Events instead
-of polling. Thumbnails are pre-warmed during indexing so the clip
-editor opens instantly. Fanout searches now return a confidence
-score (penalizes spans covering whole chunks), with a UI slider to
-filter and a per-hit dismiss button.
+**Phase 7** — Resumable chunked uploads. Multi-gigabyte uploads now
+survive transient network errors: the file is split into 8 MiB chunks,
+each PUT separately to a per-upload session; on failure the client
+backs off and retries, on offset mismatch it resyncs from the server's
+view of `bytes_received` and continues. Cancel button on the uploader.
+Throughput display while uploading.
+
+(Phase 6 still active too: one-command `clip dev`, SSE job progress,
+thumbnail pre-warm, fanout confidence scoring.)
 
 ## Requirements
 
@@ -157,7 +158,12 @@ Interactive docs are auto-generated at `/docs` (Swagger) and `/redoc`. Key route
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/videos` | Multipart upload — returns `{id, ...}` |
+| `POST` | `/api/videos` | One-shot multipart upload — fine for small files |
+| `POST` | `/api/uploads` | Start a resumable chunked upload — returns `upload_id` + `chunk_size` |
+| `GET`  | `/api/uploads/{id}` | Current `bytes_received` for resume |
+| `PUT`  | `/api/uploads/{id}?offset=N` | Append chunk at offset N (409 on mismatch) |
+| `POST` | `/api/uploads/{id}/finalize` | Finalize → returns the new video row |
+| `DELETE` | `/api/uploads/{id}` | Abort and remove the partial upload |
 | `GET`  | `/api/videos` | List all uploaded videos |
 | `GET`  | `/api/videos/{id}` | Video metadata |
 | `DELETE` | `/api/videos/{id}` | Delete video + index sidecar |

@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtBytes, fmtTime, type Video } from '../api'
 
+function fmtBps(bps: number): string {
+  if (!isFinite(bps) || bps <= 0) return ''
+  return `${fmtBytes(bps)}/s`
+}
+
 export default function Library() {
   const [videos, setVideos] = useState<Video[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -43,32 +48,45 @@ export default function Library() {
 
 function Uploader({ onUploaded }: { onUploaded: () => void }) {
   const [dragging, setDragging] = useState(false)
-  const [uploading, setUploading] = useState<{ name: string; frac: number } | null>(null)
+  const [uploading, setUploading] = useState<
+    { name: string; size: number; frac: number; bps: number; error?: string } | null
+  >(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const handleFile = useCallback(async (file: File) => {
-    setUploading({ name: file.name, frac: 0 })
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setUploading({ name: file.name, size: file.size, frac: 0, bps: 0 })
     try {
-      await api.uploadVideo(file, (frac) => setUploading({ name: file.name, frac }))
+      await api.uploadResumable(
+        file,
+        (frac, bps) => setUploading({ name: file.name, size: file.size, frac, bps }),
+        ctrl.signal,
+      )
       onUploaded()
-    } catch (e) {
-      alert(`upload failed: ${e}`)
-    } finally {
       setUploading(null)
+    } catch (e) {
+      const msg = String(e)
+      if (msg.includes('cancelled')) setUploading(null)
+      else setUploading((u) => u ? { ...u, error: msg } : null)
     }
   }, [onUploaded])
+
+  const cancel = () => { abortRef.current?.abort(); setUploading(null) }
 
   return (
     <div
       className={`uploader ${dragging ? 'drag' : ''}`}
-      onClick={() => inputRef.current?.click()}
+      onClick={() => { if (!uploading) inputRef.current?.click() }}
       onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault()
         setDragging(false)
         const f = e.dataTransfer.files?.[0]
-        if (f) void handleFile(f)
+        if (f && !uploading) void handleFile(f)
       }}
     >
       <input
@@ -81,15 +99,30 @@ function Uploader({ onUploaded }: { onUploaded: () => void }) {
         }}
       />
       {uploading ? (
-        <div className="col" style={{ gap: 8 }}>
-          <div>uploading <span className="mono">{uploading.name}</span></div>
+        <div className="col" style={{ gap: 8 }} onClick={(e) => e.stopPropagation()}>
+          <div className="row">
+            <div className="col" style={{ gap: 2, alignItems: 'flex-start' }}>
+              <div>uploading <span className="mono">{uploading.name}</span></div>
+              <div className="small muted">
+                {fmtBytes(Math.round(uploading.size * uploading.frac))} of {fmtBytes(uploading.size)}
+                {uploading.bps > 0 && ` · ${fmtBps(uploading.bps)}`}
+              </div>
+            </div>
+            <div className="spacer" />
+            <button onClick={cancel}>cancel</button>
+          </div>
           <div className="progress"><div style={{ width: `${uploading.frac * 100}%` }} /></div>
           <div className="small muted">{Math.round(uploading.frac * 100)}%</div>
+          {uploading.error && (
+            <div className="small" style={{ color: 'var(--red)' }}>
+              {uploading.error} — try again or pick a different file
+            </div>
+          )}
         </div>
       ) : (
         <div className="col" style={{ gap: 4 }}>
           <div><b>drop a video here</b>, or click to choose</div>
-          <div className="small muted">mp4 / mov / mkv / webm / m4v / avi</div>
+          <div className="small muted">mp4 / mov / mkv / webm / m4v / avi · chunked upload, retries on transient errors</div>
         </div>
       )}
     </div>

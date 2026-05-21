@@ -141,6 +141,7 @@ export const api = {
 
   getVideo: (id: string) => authedFetch(`/api/videos/${id}`).then(json<Video>),
 
+  /** One-shot multipart upload — fine for small files, but no retry/resume. */
   uploadVideo: (file: File, onProgress?: (frac: number) => void) =>
     new Promise<Video>((resolve, reject) => {
       const form = new FormData()
@@ -161,6 +162,75 @@ export const api = {
       xhr.onerror = () => reject(new Error('upload network error'))
       xhr.send(form)
     }),
+
+  /** Resumable chunked upload. Retries each chunk with backoff; if the server
+   * has more bytes than the client thinks, resyncs the offset and continues. */
+  uploadResumable: async (
+    file: File,
+    onProgress?: (frac: number, bps: number) => void,
+    signal?: AbortSignal,
+  ): Promise<Video> => {
+    type Init = { upload_id: string; chunk_size: number; bytes_received: number; total_size: number }
+    type ChunkResp = { bytes_received: number; total_size: number }
+
+    const init = await authedFetch('/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, size: file.size }),
+    }).then((r) => json<Init>(r))
+
+    let offset = init.bytes_received
+    const chunkSize = init.chunk_size
+    const total = file.size
+    const startedAt = performance.now()
+
+    const putChunk = async (chunkOffset: number, blob: Blob): Promise<ChunkResp> => {
+      const ATTEMPTS = 4
+      let lastErr: unknown
+      for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+        if (signal?.aborted) throw new Error('cancelled')
+        try {
+          const resp = await authedFetch(
+            `/api/uploads/${init.upload_id}?offset=${chunkOffset}`,
+            { method: 'PUT', body: blob, signal },
+          )
+          if (resp.status === 409) {
+            // Offset mismatch — resync from server.
+            const cur = await authedFetch(`/api/uploads/${init.upload_id}`).then((r) => r.json())
+            offset = cur.bytes_received
+            return { bytes_received: cur.bytes_received, total_size: cur.total_size }
+          }
+          if (!resp.ok) {
+            const detail = await resp.text().catch(() => resp.statusText)
+            throw new Error(`${resp.status}: ${detail}`)
+          }
+          return resp.json() as Promise<ChunkResp>
+        } catch (e) {
+          lastErr = e
+          if (signal?.aborted) throw e
+          // exponential backoff: 0.5s, 1s, 2s
+          await new Promise((res) => setTimeout(res, 500 * 2 ** (attempt - 1)))
+        }
+      }
+      throw lastErr ?? new Error('chunk upload failed')
+    }
+
+    while (offset < total) {
+      if (signal?.aborted) throw new Error('cancelled')
+      const end = Math.min(offset + chunkSize, total)
+      const blob = file.slice(offset, end)
+      const r = await putChunk(offset, blob)
+      offset = r.bytes_received
+      if (onProgress) {
+        const elapsed = (performance.now() - startedAt) / 1000
+        const bps = elapsed > 0 ? offset / elapsed : 0
+        onProgress(offset / total, bps)
+      }
+    }
+
+    return authedFetch(`/api/uploads/${init.upload_id}/finalize`, { method: 'POST' })
+      .then((r) => json<Video>(r))
+  },
 
   deleteVideo: (id: string) =>
     authedFetch(`/api/videos/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
