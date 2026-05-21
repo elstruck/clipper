@@ -207,3 +207,82 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); }
 .badge.caption    { background: #1f2a3a; color: #8ebdff; }
 .badge.transcript { background: #1f3a2a; color: var(--green); }
 .badge.find       { background: #3a2f1f; color: var(--yellow); }
+
+/* Segments / reading toggle inside a tabs row */
+.seg-toggle {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: center;
+}
+.seg-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.seg-toggle button.active { background: var(--accent); color: #0a0d12; font-weight: 600; }
+.seg-toggle button:hover:not(.active) { background: var(--bg-input); color: var(--text); }
+
+/* Reading view */
+.reading-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.para {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid transparent;
+  transition: background 0.1s, border-color 0.1s;
+}
+.para.active { background: rgba(106, 167, 255, 0.07); border-color: rgba(106, 167, 255, 0.25); }
+.para-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.ts-pill {
+  background: var(--bg-input);
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+}
+.ts-pill:hover { color: var(--accent-hover); }
+.variations summary { cursor: pointer; }
+
+/* Selected row + floating selection bar */
+.event-list li.selected { background: rgba(106, 167, 255, 0.10); outline: 1px solid rgba(106, 167, 255, 0.35); }
+.event-list input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+
+.selection-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  margin-left: -16px;
+  margin-right: -16px;
+  margin-bottom: -16px;
+  padding: 10px 16px;
+  background: linear-gradient(to top, var(--bg-elevated), var(--bg-elevated));
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

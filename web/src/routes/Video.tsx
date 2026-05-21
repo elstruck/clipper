@@ -4,9 +4,9 @@ import {
   api, fmtTime, mediaUrl, type Clip, type Job, type SearchHit, type Video, type VideoIndex,
 } from '../api'
 import ClipEditor from '../components/ClipEditor'
+import EventsTimeline from '../components/EventsTimeline'
 
 type Mode = 'text' | 'fanout'
-type Track = 'captions' | 'transcript'
 type EditorState = { start: number; end: number } | null
 
 export default function VideoRoute() {
@@ -176,112 +176,6 @@ export default function VideoRoute() {
           }}
         />
       </div>
-    </div>
-  )
-}
-
-function EventsTimeline({
-  index, onJump, onEdit, player,
-}: {
-  index: VideoIndex
-  onJump: (s: number, e?: number) => void
-  onEdit: (s: number, e: number) => void
-  player: React.RefObject<HTMLVideoElement | null>
-}) {
-  const [t, setT] = useState(0)
-  const transcript = index.transcript
-  const segs = transcript?.segments ?? []
-  const hasTranscript = segs.length > 0
-  const [track, setTrack] = useState<Track>('captions')
-
-  useEffect(() => {
-    const v = player.current
-    if (!v) return
-    const handler = () => setT(v.currentTime)
-    v.addEventListener('timeupdate', handler)
-    return () => v.removeEventListener('timeupdate', handler)
-  }, [player])
-
-  return (
-    <div className="card col">
-      <div className="tabs">
-        <button
-          className={track === 'captions' ? 'active' : ''}
-          onClick={() => setTrack('captions')}
-        >
-          captions <span className="dim small">({index.events.length})</span>
-        </button>
-        <button
-          className={track === 'transcript' ? 'active' : ''}
-          onClick={() => setTrack('transcript')}
-          disabled={!hasTranscript}
-          title={hasTranscript ? undefined : 'no transcript — video may have no audio'}
-        >
-          transcript <span className="dim small">({segs.length})</span>
-        </button>
-        <div className="spacer" />
-        {track === 'transcript' && transcript?.language && (
-          <span className="small muted" style={{ alignSelf: 'center' }}>
-            {transcript.language} · {Math.round((transcript.language_probability ?? 0) * 100)}% conf
-          </span>
-        )}
-      </div>
-      {track === 'captions' ? (
-        <ul className="event-list">
-          {index.events.length === 0 && <li className="muted">no caption events</li>}
-          {index.events.map((ev, i) => {
-            const active = t >= ev.start && t < ev.end
-            return (
-              <li key={i} className={active ? 'active' : ''}>
-                <div className="row" style={{ gap: 6 }}>
-                  <span className="ts" onClick={() => onJump(ev.start, ev.end)} style={{ cursor: 'pointer' }}>
-                    {fmtTime(ev.start)} → {fmtTime(ev.end)}
-                  </span>
-                  <div className="spacer" />
-                  <button
-                    className="small"
-                    onClick={(e) => { e.stopPropagation(); onEdit(ev.start, ev.end) }}
-                  >
-                    edit clip
-                  </button>
-                </div>
-                <span className="desc">{ev.description}</span>
-              </li>
-            )
-          })}
-        </ul>
-      ) : (
-        <ul className="event-list">
-          {transcript?.error && (
-            <li className="muted small" style={{ color: 'var(--yellow)' }}>
-              transcript failed: {transcript.error}
-            </li>
-          )}
-          {segs.length === 0 && !transcript?.error && (
-            <li className="muted">no spoken content detected</li>
-          )}
-          {segs.map((seg, i) => {
-            const active = t >= seg.start && t < seg.end
-            return (
-              <li key={i} className={active ? 'active' : ''}>
-                <div className="row" style={{ gap: 6 }}>
-                  <span className="ts" onClick={() => onJump(seg.start, seg.end)} style={{ cursor: 'pointer' }}>
-                    {fmtTime(seg.start)} → {fmtTime(seg.end)}
-                  </span>
-                  <div className="spacer" />
-                  <button
-                    className="small"
-                    onClick={(e) => { e.stopPropagation(); onEdit(seg.start, seg.end) }}
-                  >
-                    edit clip
-                  </button>
-                </div>
-                <span className="desc">{seg.text}</span>
-              </li>
-            )
-          })}
-        </ul>
-      )}
     </div>
   )
 }

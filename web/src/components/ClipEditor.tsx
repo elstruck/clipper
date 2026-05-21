@@ -102,15 +102,19 @@ export default function ClipEditor(props: Props) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, cssW, cssH)
 
+    const RULER_H = 18
     const thumbY = 0
-    const thumbH = Math.min(cssH - 24, meta ? (meta.thumb_height * cssW) / (meta.width || 1) : 60)
-    const rulerY = thumbH + 8
+    // Fill the available height — the sprite is 80 thumbs at 12800px wide, so
+    // preserving aspect would squish the strip to ~5px. Stretch vertically;
+    // a slightly distorted nav strip is way better than an invisible one.
+    const thumbH = Math.max(40, cssH - RULER_H - 4)
+    const rulerY = thumbH + 4
 
     // Background
-    ctx.fillStyle = '#0f1115'
+    ctx.fillStyle = '#0a0d12'
     ctx.fillRect(0, 0, cssW, cssH)
 
-    // Thumbnail strip — draw sprite stretched to full width, preserving aspect.
+    // Thumbnail strip
     if (sprite && meta) {
       try {
         ctx.imageSmoothingQuality = 'high'
@@ -119,56 +123,86 @@ export default function ClipEditor(props: Props) {
     } else {
       ctx.fillStyle = '#1c2230'
       ctx.fillRect(0, thumbY, cssW, thumbH)
-      ctx.fillStyle = '#5d6578'
+      ctx.fillStyle = '#8a93a6'
       ctx.font = '12px ui-sans-serif, system-ui'
       ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
       ctx.fillText(error ? error : 'generating thumbnails…', cssW / 2, thumbY + thumbH / 2)
     }
 
-    // Selection overlay
     const xIn = (inT / duration) * cssW
     const xOut = (outT / duration) * cssW
-    ctx.fillStyle = 'rgba(106, 167, 255, 0.18)'
-    ctx.fillRect(xIn, thumbY, Math.max(0, xOut - xIn), thumbH)
-    // Dim regions outside selection
-    ctx.fillStyle = 'rgba(15, 17, 21, 0.55)'
+
+    // Darken regions outside the selection (vs. tinting the selection itself —
+    // it's easier to read the actual frames inside the in/out range when we
+    // dim the OUTSIDE rather than blue-cast everything inside it).
+    ctx.fillStyle = 'rgba(8, 10, 14, 0.72)'
     if (xIn > 0) ctx.fillRect(0, thumbY, xIn, thumbH)
     if (xOut < cssW) ctx.fillRect(xOut, thumbY, cssW - xOut, thumbH)
 
-    // Handles
-    const drawHandle = (x: number, color: string, label: string) => {
-      ctx.strokeStyle = color
-      ctx.lineWidth = 2
-      ctx.beginPath(); ctx.moveTo(x, thumbY); ctx.lineTo(x, thumbY + thumbH); ctx.stroke()
-      // grip
-      ctx.fillStyle = color
-      ctx.fillRect(x - 4, thumbY + thumbH / 2 - 10, 8, 20)
-      ctx.fillStyle = '#0a0d12'
-      ctx.font = 'bold 9px ui-sans-serif, system-ui'
+    // Selection bracket — thin top/bottom + brighter border, no fill so the
+    // thumbnails stay readable.
+    ctx.strokeStyle = '#8ebdff'
+    ctx.lineWidth = 2
+    ctx.strokeRect(xIn, thumbY + 1, Math.max(0, xOut - xIn), thumbH - 2)
+
+    // Handles — chunky and high-contrast.
+    const drawHandle = (x: number, label: string, side: 'left' | 'right') => {
+      const w = 12
+      const handleX = side === 'left' ? x - w : x
+      // outer glow
+      ctx.fillStyle = '#8ebdff'
+      ctx.fillRect(handleX, thumbY, w, thumbH)
+      // inner darker stripe so the label reads
+      ctx.fillStyle = '#3a6ec7'
+      ctx.fillRect(handleX + (side === 'left' ? 1 : 0), thumbY + 1, w - 1, thumbH - 2)
+      // label
+      ctx.fillStyle = '#fff'
+      ctx.font = 'bold 11px ui-sans-serif, system-ui'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(label, x, thumbY + thumbH / 2)
+      ctx.fillText(label, handleX + w / 2, thumbY + thumbH / 2)
+      // grip dots
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'
+      for (let i = -1; i <= 1; i++) {
+        ctx.fillRect(handleX + w / 2 - 1, thumbY + thumbH / 2 + i * 8 - 0.5, 2, 1)
+      }
     }
-    drawHandle(xIn, '#6aa7ff', 'I')
-    drawHandle(xOut, '#6aa7ff', 'O')
+    drawHandle(xIn, 'IN', 'right')   // grip hangs to the right of the in line
+    drawHandle(xOut, 'OUT', 'left')  // grip hangs to the left of the out line
 
     // Playhead
     const xP = (playhead / duration) * cssW
     ctx.strokeStyle = '#ff7a7a'
     ctx.lineWidth = 2
-    ctx.beginPath(); ctx.moveTo(xP, 0); ctx.lineTo(xP, thumbH + 8); ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(xP, thumbY); ctx.lineTo(xP, thumbY + thumbH)
+    ctx.stroke()
+    // playhead caret
+    ctx.fillStyle = '#ff7a7a'
+    ctx.beginPath()
+    ctx.moveTo(xP - 5, thumbY)
+    ctx.lineTo(xP + 5, thumbY)
+    ctx.lineTo(xP, thumbY + 6)
+    ctx.closePath()
+    ctx.fill()
 
-    // Ruler
-    ctx.fillStyle = '#5d6578'
+    // Ruler background + ticks
+    ctx.fillStyle = '#16191f'
+    ctx.fillRect(0, rulerY, cssW, RULER_H)
+    ctx.fillStyle = '#a3acbd'
     ctx.font = '10px ui-monospace, monospace'
-    ctx.textBaseline = 'top'
-    const tickPx = 100
-    const ticks = Math.floor(cssW / tickPx)
+    ctx.textBaseline = 'middle'
+    const tickPx = 110
+    const ticks = Math.max(2, Math.floor(cssW / tickPx))
     for (let i = 0; i <= ticks; i++) {
       const x = (i / ticks) * cssW
       const t = (i / ticks) * duration
+      // small tick mark
+      ctx.fillRect(x, rulerY, 1, 4)
       ctx.textAlign = i === 0 ? 'left' : (i === ticks ? 'right' : 'center')
-      ctx.fillText(fmtTime(t), x, rulerY)
+      const padX = i === 0 ? 4 : (i === ticks ? -4 : 0)
+      ctx.fillText(fmtTime(t), x + padX, rulerY + RULER_H / 2 + 2)
     }
   }, [sprite, meta, duration, inT, outT, playhead, error])
 
@@ -283,7 +317,11 @@ export default function ClipEditor(props: Props) {
 
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: 140, borderRadius: 6, cursor: dragRef.current ? 'grabbing' : 'pointer' }}
+        style={{
+          width: '100%', height: 160, borderRadius: 6,
+          cursor: dragRef.current ? 'grabbing' : 'pointer',
+          border: '1px solid var(--border)',
+        }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}

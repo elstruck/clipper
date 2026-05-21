@@ -7,6 +7,18 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
+**Phase 9** — Reading view + multi-select + timeline polish. Captions
+and transcript can now be browsed as a flowing reading view (paragraphs
+grouped by silence gaps for transcript, scenes grouped by adjacency +
+description similarity for captions) instead of the original 1-row-per-
+model-output micro-clip list. Each row in segment view gains a
+checkbox; Shift-click selects a range; a floating action bar shows
+total span and turns the selection into one clip with the
+`make one clip` button. The clip-editor timeline thumbnails now fill
+the full strip height (previously squashed to ~5px), the selection
+window uses a bracket outline instead of a dim blue cast, and the
+in/out handles got chunkier with bigger labels.
+
 **Phase 8** — Audio transcription. Indexing now also runs
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with the
 `distil-large-v3` model on the same GPU, automatically. The resulting
