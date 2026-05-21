@@ -288,9 +288,19 @@ export const api = {
   deleteVideo: (id: string) =>
     authedFetch(`/api/videos/${id}`, { method: 'DELETE' }).then(json<{ deleted: string }>),
 
-  startIndex: (id: string) =>
-    authedFetch(`/api/videos/${id}/index`, { method: 'POST' }).then(
-      json<{ job_id: string; video_id: string; status: string }>,
+  startIndex: (
+    id: string,
+    opts: { caption?: boolean; transcribe?: boolean } = {},
+  ) =>
+    authedFetch(`/api/videos/${id}/index`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caption: opts.caption ?? false,
+        transcribe: opts.transcribe ?? true,
+      }),
+    }).then(
+      json<{ job_id: string; video_id: string; status: string; caption: boolean; transcribe: boolean }>,
     ),
 
   getEvents: (id: string) => authedFetch(`/api/videos/${id}/events`).then(json<VideoIndex>),

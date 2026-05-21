@@ -42,17 +42,26 @@ def index(
     window: float = typer.Option(90.0, help="Chunk window (seconds)"),
     overlap: float = typer.Option(8.0, help="Chunk overlap (seconds)"),
     reencode: bool = typer.Option(False, "--reencode", help="Frame-accurate chunk extraction (slower)"),
+    captions: bool = typer.Option(False, "--captions", help="Also run Marlin visual captioning (slower, useful for visual-driven content)"),
     no_transcribe: bool = typer.Option(False, "--no-transcribe", help="Skip Whisper transcription"),
 ) -> None:
-    """Build a caption index for VIDEO, write <video>.index.json."""
+    """Build an index for VIDEO. Default = transcript-only.
+
+    Pass --captions to also run Marlin visual captioning (helpful for
+    silent screencasts, sports, music videos, etc.).
+    """
     def _report(message, current, total):
         console.print(f"  [dim]{current}/{total}[/]  [cyan]{message}[/]")
+
+    if not captions and no_transcribe:
+        console.print("[red]nothing to index — drop --no-transcribe or pass --captions[/]")
+        raise typer.Exit(1)
 
     console.print(f"[bold]indexing[/] {video}")
     t0 = time.time()
     result = pipeline.index_video(
-        str(video), window=window, overlap=overlap,
-        reencode=reencode, transcribe=not no_transcribe, progress=_report,
+        str(video), window=window, overlap=overlap, reencode=reencode,
+        caption=captions, transcribe=not no_transcribe, progress=_report,
     )
     elapsed = time.time() - t0
     n_trans = len(result.get("transcript", {}).get("segments", [])) if result.get("transcript") else 0

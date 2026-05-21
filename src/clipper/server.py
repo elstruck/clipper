@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Marlin Clipper", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="Reel", version="0.6.0", lifespan=lifespan)
 app.add_middleware(TokenAuthMiddleware)
 
 
@@ -80,6 +80,11 @@ class ClipRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
+
+
+class IndexRequest(BaseModel):
+    caption: bool = False     # Marlin visual captioning — off by default
+    transcribe: bool = True   # Whisper speech transcription
 
 
 # ---------------- helpers ----------------
@@ -323,10 +328,18 @@ def delete_video(video_id: str) -> dict:
 # ----- indexing -----
 
 @app.post("/api/videos/{video_id}/index")
-def start_index(video_id: str) -> dict:
+def start_index(video_id: str, req: Optional[IndexRequest] = None) -> dict:
     _video_or_404(video_id)
-    job_id = jobs.submit_index_job(video_id)
-    return {"job_id": job_id, "video_id": video_id, "status": "queued"}
+    opts = req or IndexRequest()
+    if not (opts.caption or opts.transcribe):
+        raise HTTPException(400, "enable caption, transcribe, or both")
+    job_id = jobs.submit_index_job(
+        video_id, caption=opts.caption, transcribe=opts.transcribe,
+    )
+    return {
+        "job_id": job_id, "video_id": video_id, "status": "queued",
+        "caption": opts.caption, "transcribe": opts.transcribe,
+    }
 
 
 @app.get("/api/videos/{video_id}/events")

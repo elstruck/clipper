@@ -59,8 +59,9 @@ export default function VideoRoute() {
     return () => { cancelled = true; unsub?.() }
   }, [id, video?.status, refreshVideo, refreshIndex])
 
+  const [withCaptions, setWithCaptions] = useState(false)
   const startIndex = async () => {
-    try { await api.startIndex(id); void refreshVideo() }
+    try { await api.startIndex(id, { caption: withCaptions, transcribe: true }); void refreshVideo() }
     catch (e) { alert(`index failed: ${e}`) }
   }
 
@@ -110,8 +111,26 @@ export default function VideoRoute() {
             </div>
           </div>
           <div className="spacer" />
+          {(video.status === 'uploaded' || video.status === 'failed' || video.status === 'indexed') && (
+            <label
+              className="row small muted"
+              style={{ gap: 6, cursor: 'pointer' }}
+              title="Also run Marlin visual captioning when indexing. Useful for visual-driven content."
+            >
+              <input
+                type="checkbox"
+                checked={withCaptions}
+                onChange={(e) => setWithCaptions(e.target.checked)}
+                style={{ width: 'auto', margin: 0 }}
+              />
+              + visual captions
+            </label>
+          )}
           {video.status === 'uploaded' && <button className="primary" onClick={startIndex}>start indexing</button>}
           {video.status === 'failed' && <button onClick={startIndex}>retry indexing</button>}
+          {video.status === 'indexed' && (
+            <button onClick={startIndex} title="re-run indexing with current options">re-index</button>
+          )}
           <button onClick={() => {
             const v = videoRef.current
             if (!v) return

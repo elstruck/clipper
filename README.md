@@ -1,4 +1,4 @@
-# Marlin Clipper
+# Reel
 
 Local web tool to find and clip moments in long videos using
 [NemoStation/Marlin-2B](https://huggingface.co/NemoStation/Marlin-2B)
@@ -6,6 +6,20 @@ Local web tool to find and clip moments in long videos using
 designed to be shareable with non-technical teammates.
 
 ## Status
+
+**Phase 13** — Marlin is now optional + rebrand to **Reel**. The
+indexing pipeline defaults to transcript-only (Whisper). Marlin's
+visual captioning is opt-in via a checkbox on the library card and
+the video page (also `--captions` on the CLI). Skip it for talking
+videos (meetings, tutorials, demos) — the transcript carries the
+signal there. Flip it on for silent screencasts, sports, music
+videos, B-roll. Typical run is now Whisper (~2 GB) + whatever LLM
+you've pointed analysis at — Marlin (4 GB) only loads when
+requested.
+
+The UI is now branded **Reel**. Internal package/CLI names
+(`clipper`, `clip ...`) stay the same since they were never user-
+facing.
 
 **Phase 12** — `.env` support. The Python side now auto-loads `.env`
 and `.env.local` files at startup (same precedence model as Vite —

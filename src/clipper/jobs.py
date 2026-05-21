@@ -76,12 +76,16 @@ def ensure_worker() -> None:
     _worker_started.set()
 
 
-def submit_index_job(video_id: str) -> str:
+def submit_index_job(
+    video_id: str, *, caption: bool = False, transcribe: bool = True,
+) -> str:
     """Enqueue an indexing job for `video_id`. Returns the new job_id."""
     ensure_worker()
     video = db.get_video(video_id)
     if not video:
         raise KeyError(f"unknown video: {video_id}")
+    if not (caption or transcribe):
+        raise ValueError("at least one of caption/transcribe must be enabled")
 
     job_id = db.create_job(video_id, "index")
 
@@ -97,7 +101,9 @@ def submit_index_job(video_id: str) -> str:
 
         db.update_video(video_id, status="indexing")
         try:
-            pipeline.index_video(path, progress=progress_cb)
+            pipeline.index_video(
+                path, caption=caption, transcribe=transcribe, progress=progress_cb,
+            )
             # Pre-warm the thumbnail sprite now so the clip editor opens instantly.
             try:
                 thumbnails.generate_sprite(video_id, path)

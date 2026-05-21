@@ -131,9 +131,11 @@ function Uploader({ onUploaded }: { onUploaded: () => void }) {
 
 function VideoCard({ v, onChange }: { v: Video; onChange: () => void }) {
   const [starting, setStarting] = useState(false)
+  const [withCaptions, setWithCaptions] = useState(false)
+
   const onStart = async () => {
     setStarting(true)
-    try { await api.startIndex(v.id); onChange() }
+    try { await api.startIndex(v.id, { caption: withCaptions, transcribe: true }); onChange() }
     catch (e) { alert(`start failed: ${e}`) }
     finally { setStarting(false) }
   }
@@ -141,6 +143,8 @@ function VideoCard({ v, onChange }: { v: Video; onChange: () => void }) {
     if (!confirm(`Delete ${v.filename}? This also removes the index and uploaded file.`)) return
     try { await api.deleteVideo(v.id); onChange() } catch (e) { alert(`delete failed: ${e}`) }
   }
+
+  const showOptions = v.status === 'uploaded' || v.status === 'failed'
 
   return (
     <div className="card col" style={{ gap: 10 }}>
@@ -154,6 +158,21 @@ function VideoCard({ v, onChange }: { v: Video; onChange: () => void }) {
         <span>·</span>
         <span>{fmtBytes(v.size_bytes)}</span>
       </div>
+      {showOptions && (
+        <label
+          className="row small muted"
+          style={{ gap: 6, cursor: 'pointer' }}
+          title="Also run Marlin visual captioning. Slower but useful for silent or visual-driven content."
+        >
+          <input
+            type="checkbox"
+            checked={withCaptions}
+            onChange={(e) => setWithCaptions(e.target.checked)}
+            style={{ width: 'auto', margin: 0 }}
+          />
+          + visual captions (Marlin, slower)
+        </label>
+      )}
       <div className="row" style={{ marginTop: 4 }}>
         <Link to={`/videos/${v.id}`}><button>open</button></Link>
         {v.status === 'uploaded' && (

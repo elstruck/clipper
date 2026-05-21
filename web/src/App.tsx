@@ -46,7 +46,7 @@ export default function App() {
     return (
       <div className="app">
         <div className="card col" style={{ maxWidth: 480, margin: '80px auto' }}>
-          <h1 style={{ margin: 0 }}>Marlin Clipper</h1>
+          <h1 style={{ margin: 0 }}>Reel</h1>
           <p className="muted">This server requires an access token.</p>
           <input
             type="password"
@@ -71,7 +71,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <Link to="/"><h1>Marlin Clipper</h1></Link>
+        <Link to="/"><h1>Reel</h1></Link>
         {onVideo && <span className="crumb">/ video</span>}
         <div className="spacer" />
         {stats && (
