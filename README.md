@@ -7,23 +7,25 @@ designed to be shareable with non-technical teammates.
 
 ## Status
 
+**Phase 12** — `.env` support. The Python side now auto-loads `.env`
+and `.env.local` files at startup (same precedence model as Vite —
+`.env.local` overrides `.env`). Both are gitignored. Copy
+`.env.example` to `.env` and edit; no more shell exports needed.
+
+```bash
+cp .env.example .env
+# edit .env to set OPENAI_BASE_URL / MODEL_NAME / OPENAI_API_KEY
+# or ANTHROPIC_API_KEY, plus CLIPPER_TOKEN if you want auth.
+uv run clip dev
+```
+
 **Phase 11** — Pluggable LLM provider. The AI clip suggestions can now
 run against any OpenAI-compatible endpoint (vLLM, Ollama, LM Studio,
 llama.cpp server, real OpenAI) or Anthropic Claude. Auto-detection:
 if `OPENAI_BASE_URL` is set, use that; else if `ANTHROPIC_API_KEY` is
 set, use Anthropic; else the feature is disabled. Force a choice
 with `CLIPPER_LLM_PROVIDER=openai|anthropic`. The UI shows which
-provider is active.
-
-```bash
-# Local model (e.g. vLLM-served Qwen on Runpod / your own GPU box):
-export OPENAI_BASE_URL=https://your-vllm-host/v1
-export MODEL_NAME=llm                       # whatever your server uses
-export OPENAI_API_KEY=<token if required>   # placeholder ok for unsecured local
-
-# Or Anthropic Claude:
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+provider is active. See `.env.example` for all supported keys.
 
 **Phase 10** — Always-visible clip editor + AI clip suggestions. The
 clip editor lives at the top of the video page now; clicking any

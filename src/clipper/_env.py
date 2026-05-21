@@ -17,6 +17,41 @@ import os
 import sys
 from pathlib import Path
 
+
+def _load_dotenv_files() -> None:
+    """Load .env files just like a Node project would.
+
+    Looks for, in order of precedence (earlier files win — same as Vite):
+    - .env.local   (gitignored, machine-specific overrides)
+    - .env         (committed-ish defaults; we gitignore by default)
+
+    Searches from the current working directory upward, and also checks
+    the project root (two parents up from this file) so the lookup works
+    regardless of where the user runs `clip ...` from.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    project_root = Path(__file__).resolve().parents[2]
+    candidate_dirs = [Path.cwd(), project_root]
+    seen: set[Path] = set()
+
+    for d in candidate_dirs:
+        d = d.resolve()
+        if d in seen:
+            continue
+        seen.add(d)
+        # .env.local wins over .env (override=False so the first hit takes priority).
+        for name in (".env.local", ".env"):
+            p = d / name
+            if p.is_file():
+                load_dotenv(p, override=False)
+
+
+_load_dotenv_files()
+
 FFMPEG_LIB = os.environ.get("VIDPROC_FFMPEG_LIB", "/home/elstruck/miniconda3/lib")
 
 
